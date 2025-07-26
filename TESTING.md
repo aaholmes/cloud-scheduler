@@ -9,6 +9,8 @@ The Cloud Scheduler test suite includes:
 - **Unit Tests**: Test individual functions and classes in isolation
 - **Integration Tests**: Test interactions between components and external services  
 - **Dry Run Tests**: Test the `--dry-run` functionality end-to-end
+- **Credential Validation Tests**: Test authentication for dynamic instance discovery
+- **Rate Limiting Tests**: Verify exponential backoff and API throttling
 - **Mock Services**: Simulate AWS, GCP, and Azure APIs for reliable testing
 
 ## Quick Start
@@ -41,11 +43,244 @@ python run_tests.py --mode integration
 # Dry run tests only
 python run_tests.py --mode dry-run
 
+# Credential validation tests only
+python run_tests.py --mode auth
+
 # Fast tests (no coverage)
 python run_tests.py --mode fast
 ```
 
 ## Test Structure
+
+```
+tests/
+├── unit/
+│   ├── test_find_cheapest_instance.py  # Dynamic discovery tests
+│   ├── test_credential_validation.py   # NEW: Authentication tests
+│   ├── test_rate_limiting.py           # NEW: Rate limiting tests
+│   ├── test_cloud_run.py
+│   ├── test_cost_tracker.py
+│   ├── test_job_manager.py
+│   └── test_budget_validation.py
+├── integration/
+│   ├── test_cloud_providers.py         # Real API tests with auth
+│   ├── test_dry_run.py                 # End-to-end dry run tests
+│   └── test_s3_staging.py              # S3 integration tests
+├── fixtures/
+│   ├── mock_aws_responses.json         # Mock API responses
+│   ├── mock_gcp_responses.json
+│   ├── mock_azure_responses.json
+│   └── invalid_credentials.json        # NEW: Credential test data
+└── conftest.py                         # Test configuration
+```
+
+## New Testing Features
+
+### Credential Validation Tests
+
+The system now includes comprehensive tests for cloud provider authentication:
+
+```bash
+# Test credential validation without making API calls
+pytest tests/unit/test_credential_validation.py -v
+
+# Test with actual credentials (integration)
+pytest tests/integration/test_cloud_providers.py::test_credential_validation -v
+```
+
+**What's tested:**
+- AWS credential validation with proper error messages
+- GCP service account authentication
+- Azure DefaultAzureCredential handling
+- Helpful error messages for common authentication issues
+
+### Rate Limiting Tests
+
+Tests verify the new rate limiting and exponential backoff features:
+
+```bash
+# Test rate limiting behavior
+pytest tests/unit/test_rate_limiting.py -v
+```
+
+**What's tested:**
+- Rate limit enforcement (calls per second)
+- Burst limit handling
+- Exponential backoff on API errors
+- Retry logic with jitter
+
+### Dynamic Discovery Tests
+
+Enhanced tests for the new dynamic instance discovery:
+
+```bash
+# Test dynamic discovery with mocked APIs
+pytest tests/unit/test_find_cheapest_instance.py::test_dynamic_discovery -v
+```
+
+**What's tested:**
+- API calls to all cloud providers
+- Instance filtering based on requirements
+- Fallback behavior when APIs fail
+- Credential validation before API calls
+
+## Test Categories
+
+### Unit Tests
+
+**Credential Validation (`test_credential_validation.py`):**
+```python
+def test_aws_credential_validation():
+    """Test AWS credential validation with various error conditions."""
+    
+def test_gcp_credential_validation():
+    """Test GCP authentication with service accounts."""
+    
+def test_azure_credential_validation():
+    """Test Azure DefaultAzureCredential authentication."""
+```
+
+**Rate Limiting (`test_rate_limiting.py`):**
+```python
+def test_rate_limit_enforcement():
+    """Verify rate limiting prevents excessive API calls."""
+    
+def test_exponential_backoff():
+    """Test exponential backoff on API errors."""
+    
+def test_burst_limit_handling():
+    """Verify burst limit enforcement."""
+```
+
+**Dynamic Discovery (`test_find_cheapest_instance.py`):**
+```python
+def test_aws_instance_discovery():
+    """Test AWS EC2 instance type discovery."""
+    
+def test_gcp_machine_type_discovery():
+    """Test GCP machine type discovery."""
+    
+def test_azure_vm_size_discovery():
+    """Test Azure VM size discovery with SDK."""
+```
+
+### Integration Tests
+
+**Cloud Provider Authentication (`test_cloud_providers.py`):**
+```bash
+# These tests require actual cloud credentials
+export AWS_PROFILE=test-profile
+export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+az login
+
+pytest tests/integration/test_cloud_providers.py -v --auth-tests
+```
+
+**Dry Run End-to-End (`test_dry_run.py`):**
+```bash
+# Test complete workflow without launching instances
+pytest tests/integration/test_dry_run.py -v
+```
+
+## Running Specific Test Categories
+
+### Authentication Tests Only
+```bash
+# Unit tests for credential validation
+pytest tests/unit/test_credential_validation.py -v
+
+# Integration tests with real credentials
+pytest tests/integration/test_cloud_providers.py::test_auth -v --slow
+```
+
+### Rate Limiting Tests
+```bash
+# Test rate limiting and backoff behavior
+pytest tests/unit/test_rate_limiting.py -v --slow
+```
+
+### Dynamic Discovery Tests
+```bash
+# Test with mocked APIs
+pytest tests/unit/test_find_cheapest_instance.py::test_dynamic_discovery -v
+
+# Test with real APIs (requires credentials)
+pytest tests/integration/test_cloud_providers.py::test_dynamic_discovery -v --slow
+```
+
+## Mock Data and Fixtures
+
+### New Test Fixtures
+
+**`fixtures/invalid_credentials.json`:**
+```json
+{
+  "aws_invalid": {
+    "error": "UnauthorizedOperation",
+    "message": "AWS credentials not valid or insufficient permissions"
+  },
+  "gcp_invalid": {
+    "error": "DefaultCredentialsError", 
+    "message": "No GCP credentials available"
+  },
+  "azure_invalid": {
+    "error": "AuthenticationError",
+    "message": "No Azure subscriptions accessible"
+  }
+}
+```
+
+**Enhanced API Response Mocks:**
+- `mock_aws_responses.json` - Updated with new EC2 instance types
+- `mock_gcp_responses.json` - Updated with latest machine types  
+- `mock_azure_responses.json` - Updated with current VM sizes
+
+## Continuous Integration
+
+### GitHub Actions Integration
+
+The test suite now includes credential validation in CI:
+
+```yaml
+# .github/workflows/test.yml
+- name: Test Credential Validation
+  run: |
+    python -m pytest tests/unit/test_credential_validation.py -v
+    python -m pytest tests/unit/test_rate_limiting.py -v
+```
+
+**Note**: Integration tests with real cloud APIs are not run in CI to avoid credential management issues.
+
+## Troubleshooting Test Issues
+
+### Credential Test Failures
+
+```bash
+# Check if credentials are properly configured
+aws sts get-caller-identity
+gcloud auth list
+az account show
+
+# Run tests with debug output
+pytest tests/unit/test_credential_validation.py -v -s --log-cli-level=DEBUG
+```
+
+### Rate Limiting Test Issues
+
+```bash
+# These tests may be slow due to intentional delays
+pytest tests/unit/test_rate_limiting.py -v --timeout=60
+```
+
+### Mock vs Real API Tests
+
+```bash
+# Run only mock tests (fast)
+pytest tests/unit/ -v -m "not slow"
+
+# Run real API tests (requires credentials)
+pytest tests/integration/ -v -m "slow" --auth-tests
+```
 
 ```
 tests/

@@ -5,18 +5,23 @@ Automated system for finding the cheapest cloud spot instances across AWS, GCP, 
 ## Overview
 
 This project provides a complete workflow for:
-1. **Price Discovery** - Queries spot instance prices across all major cloud providers
-2. **Instance Selection** - Finds the cheapest instance meeting your hardware requirements
-3. **Budget Validation** - Prevents job launches that exceed cost limits
-4. **File Staging** - Uploads job files to S3 for reliable transfer to instances
-5. **Automated Deployment** - Launches instances with pre-configured bootstrap scripts
-6. **Computation Execution** - Runs computational workloads with customizable scripts
-7. **Result Syncing** - Automatically syncs results to Google Drive with configurable exclusions
-8. **Cost Tracking** - Retrieves actual costs from cloud provider billing APIs
-9. **Cost Analysis** - Comprehensive reporting on spending patterns and budget performance
+1. **Dynamic Instance Discovery** - 🆕 Real-time API queries discover ALL available instance types
+2. **Price Discovery** - Queries spot instance prices across all major cloud providers
+3. **Instance Selection** - Finds the cheapest instance meeting your hardware requirements
+4. **Secure Authentication** - 🆕 Proper credential validation for all cloud providers
+5. **Budget Validation** - Prevents job launches that exceed cost limits
+6. **File Staging** - Uploads job files to S3 for reliable transfer to instances
+7. **Automated Deployment** - Launches instances with pre-configured bootstrap scripts
+8. **Computation Execution** - Runs computational workloads with customizable scripts
+9. **Result Syncing** - Automatically syncs results to Google Drive with configurable exclusions
+10. **Cost Tracking** - Retrieves actual costs from cloud provider billing APIs
+11. **Cost Analysis** - Comprehensive reporting on spending patterns and budget performance
 
 ## Features
 
+- **🆕 Dynamic Instance Discovery** - Real-time API queries for latest instance types
+- **🆕 Enhanced Security** - Proper authentication and credential validation
+- **🆕 Rate Limiting** - Exponential backoff prevents API quota issues
 - Multi-cloud support (AWS, GCP, Azure)
 - Real-time spot price comparison with interactive selection
 - **Cost tracking and budgeting** with billing API integration
@@ -41,16 +46,28 @@ pip install -r requirements.txt
 
 2. Configure cloud credentials and S3:
 ```bash
+# AWS setup
 aws configure
 aws s3 mb s3://my-compute-jobs  # Create S3 bucket
+
+# GCP setup (required for dynamic discovery)
 gcloud auth login
-az login
+gcloud auth application-default login  # For API access
+
+# Azure setup (enhanced with new SDK)
+az login  # For DefaultAzureCredential
 ```
 
-3. Find cheapest instances:
+3. Find cheapest instances with dynamic discovery:
 ```bash
 python find_cheapest_instance.py
 ```
+
+**🆕 What's New:**
+- **Dynamic Discovery**: Automatically queries ALL available instance types from cloud APIs
+- **Credential Validation**: Verifies authentication before API calls
+- **Rate Limiting**: Built-in throttling prevents quota issues
+- **Enhanced Error Handling**: Helpful messages for credential and API issues
 
 This displays instances with both hourly and per-core pricing, then presents an interactive menu:
 
@@ -63,7 +80,7 @@ Your selection is saved as index 0 in `spot_prices.json` for easy use with `clou
 
 For non-interactive mode:
 ```bash
-python find_cheapest_instance.py --no-interactive
+python find_cheapest_instance.py --no-interactive --min-vcpu 16 --max-vcpu 32
 ```
 
 4. Submit a job:
@@ -98,6 +115,7 @@ cloud-scheduler/
 ├── SETUP.md                   # Detailed setup instructions
 ├── CONFIGURATION.md           # Configuration guide and profiles
 ├── DOCKER.md                  # Docker containerization guide
+├── TROUBLESHOOTING.md         # 🆕 Comprehensive troubleshooting guide
 ├── COST_TRACKING.md           # Cost tracking and budgeting guide
 ├── example_usage.md           # Complete usage walkthrough
 └── README.md                  # This file

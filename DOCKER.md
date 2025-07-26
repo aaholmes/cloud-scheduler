@@ -65,9 +65,15 @@ python cloud_run.py my_calculation \
 ## Container Workflow
 
 ### 1. Container Startup
+
+**Important**: Containers require proper cloud authentication to access dynamic instance discovery features.
+
 ```bash
 docker run \
     -v ./output:/app/output \
+    -v ~/.aws:/root/.aws:ro \
+    -v ~/.config/gcloud:/root/.config/gcloud:ro \
+    -v ~/.azure:/root/.azure:ro \
     -e JOB_ID=abc123 \
     -e S3_INPUT_PATH=s3://bucket/job/input/ \
     -e GDRIVE_PATH=results/water_dimer \
@@ -75,12 +81,37 @@ docker run \
     quantum-chemistry:latest
 ```
 
+**Authentication Methods:**
+
+1. **Mount credential directories** (recommended for development):
+   ```bash
+   -v ~/.aws:/root/.aws:ro           # AWS credentials
+   -v ~/.config/gcloud:/root/.config/gcloud:ro  # GCP credentials
+   -v ~/.azure:/root/.azure:ro       # Azure credentials
+   ```
+
+2. **Environment variables** (for CI/CD):
+   ```bash
+   -e AWS_ACCESS_KEY_ID=your-key \
+   -e AWS_SECRET_ACCESS_KEY=your-secret \
+   -e GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json \
+   -e AZURE_CLIENT_ID=your-client-id \
+   -e AZURE_CLIENT_SECRET=your-secret \
+   -e AZURE_TENANT_ID=your-tenant-id
+   ```
+
+3. **Managed Identity** (on cloud VMs):
+   - No additional configuration needed
+   - Automatically uses instance credentials
+
 ### 2. Automatic Process
-1. **Download**: Fetch input files from S3
-2. **Setup**: Configure rclone for Google Drive access
-3. **Calculate**: Run quantum chemistry calculation
-4. **Sync**: Upload results to Google Drive (excluding FCIDUMP)
-5. **Complete**: Container exits with status code
+1. **Credential Validation**: Verify cloud provider authentication
+2. **Dynamic Discovery**: Query APIs for available instance types (if applicable)
+3. **Download**: Fetch input files from S3
+4. **Setup**: Configure rclone for Google Drive access
+5. **Calculate**: Run quantum chemistry calculation
+6. **Sync**: Upload results to Google Drive (excluding FCIDUMP)
+7. **Complete**: Container exits with status code
 
 ### 3. Host Monitoring
 The `bootstrap-docker.sh` script on the host:
@@ -96,6 +127,10 @@ The `bootstrap-docker.sh` script on the host:
 ```dockerfile
 # Add custom quantum chemistry software
 FROM ubuntu:22.04
+
+# Install Azure SDK for dynamic discovery
+RUN pip install azure-identity azure-mgmt-compute azure-mgmt-resource
+
 # ... base setup ...
 
 # Install custom software
@@ -289,6 +324,65 @@ docker login ghcr.io
 # Verify image metadata
 docker inspect ghcr.io/myorg/quantum-chemistry:latest
 ```
+
+### Authentication Issues in Containers
+
+**AWS Authentication:**
+```bash
+# Test inside container
+docker exec -it container_name aws sts get-caller-identity
+
+# Common errors:
+# - "Unable to locate credentials": Mount ~/.aws directory
+# - "An error occurred (SignatureDoesNotMatch)": Check clock synchronization
+```
+
+**GCP Authentication:**
+```bash
+# Test inside container
+docker exec -it container_name gcloud auth list
+
+# Common errors:
+# - "No credentialed accounts": Mount ~/.config/gcloud directory
+# - "quota exceeded": Rate limiting in effect, will retry automatically
+```
+
+**Azure Authentication:**
+```bash
+# Test inside container
+docker exec -it container_name az account show
+
+# Common errors:
+# - "Please run 'az login'": Mount ~/.azure directory or set environment variables
+# - "No subscriptions found": Check Azure permissions
+```
+
+**Debugging Steps for Dynamic Discovery:**
+
+1. **Verify credential mounts:**
+   ```bash
+   docker run -it --rm \
+     -v ~/.aws:/root/.aws:ro \
+     -v ~/.config/gcloud:/root/.config/gcloud:ro \
+     -v ~/.azure:/root/.azure:ro \
+     quantum-chemistry:latest bash
+   ```
+
+2. **Check environment variables:**
+   ```bash
+   docker run -it --rm \
+     -e AWS_ACCESS_KEY_ID \
+     -e AWS_SECRET_ACCESS_KEY \
+     quantum-chemistry:latest bash
+   ```
+
+3. **Test dynamic discovery:**
+   ```bash
+   docker run -it --rm \
+     -v ~/.aws:/root/.aws:ro \
+     quantum-chemistry:latest \
+     python -c "from find_cheapest_instance import get_aws_instance_types; print(len(get_aws_instance_types()))"
+   ```
 
 ## Performance Considerations
 

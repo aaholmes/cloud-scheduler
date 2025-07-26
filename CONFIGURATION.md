@@ -217,14 +217,41 @@ python cloud_run.py my_calculation --config my_custom_config.json --from-spot-pr
 
 ## Dynamic Configuration
 
-The system automatically adjusts instance selection based on your requirements:
+The system now features **dynamic instance discovery** that automatically queries all cloud providers for available instance types instead of using hardcoded lists.
+
+### Dynamic Instance Discovery
+**NEW FEATURE**: The system dynamically discovers ALL available instance types from cloud provider APIs:
+
+- **AWS**: Queries EC2 `describe_instance_types` API for real-time instance catalog
+- **GCP**: Queries Compute Engine `machineTypes.list` API for current offerings
+- **Azure**: Uses Azure SDK `resource_skus.list` API for VM size discovery
+
+**Benefits:**
+- Always discovers the latest instance types
+- No maintenance of hardcoded instance lists
+- Automatic filtering based on your requirements
+- Graceful fallback if APIs are unavailable
+
+### Rate Limiting and Security
+**NEW FEATURE**: Built-in rate limiting with exponential backoff prevents API quota issues:
+
+```python
+# Rate limiting configuration
+AWS_RATE_LIMIT = 10 calls/second, 50 burst limit
+GCP_RATE_LIMIT = 10 calls/second, 30 burst limit
+AZURE_RATE_LIMIT = SDK built-in throttling
+```
+
+**Credential Validation**: All cloud provider credentials are validated before API calls with helpful error messages.
 
 ### Automatic Instance Discovery
 When using `--from-spot-prices`, the system will:
-1. Run `find_cheapest_instance.py` with your hardware requirements
-2. Find the best matching instances across all providers
-3. Present interactive selection menu
-4. Launch your chosen instance
+1. **Validate credentials** for all configured cloud providers
+2. **Query APIs** with rate limiting to discover available instance types
+3. **Filter instances** based on your hardware requirements
+4. **Compare prices** across all providers
+5. **Present interactive selection menu** with optimized options
+6. **Launch your chosen instance** with full configuration
 
 ```bash
 # System automatically finds instances matching these requirements
@@ -239,6 +266,14 @@ python cloud_run.py my_job \
 If hardware requirements aren't specified:
 - Uses values from config file `hardware` section
 - Falls back to built-in defaults (16-32 vCPUs, 64-256GB RAM)
+- **NEW**: Dynamically discovers instances matching these requirements from live APIs
+
+### Error Handling and Fallbacks
+**Robust Error Handling**: If dynamic discovery fails for any provider:
+- System provides detailed error messages for credential issues
+- Falls back to basic instance set to ensure functionality
+- Logs warnings but continues with available providers
+- Implements exponential backoff for temporary API issues
 
 ## Validation and Error Handling
 
@@ -260,6 +295,28 @@ ERROR: AWS key_name not specified in config file
 ```bash
 $ python find_cheapest_instance.py --min-vcpu 256
 INFO: Found 0 instances meeting hardware requirements
+```
+
+**NEW: Credential Validation Errors:**
+```bash
+# AWS credential issues
+ERROR: AWS credentials not valid or insufficient permissions: UnauthorizedOperation
+
+# GCP credential issues
+ERROR: No GCP credentials available. Run 'gcloud auth application-default login'
+
+# Azure credential issues
+ERROR: No Azure subscriptions accessible with current credentials
+```
+
+**NEW: API Discovery Errors:**
+```bash
+# Rate limiting
+INFO: Rate limit burst exceeded, sleeping for 45.2s
+
+# Fallback behavior
+WARNING: Failed to query AWS instance types dynamically: [error]
+INFO: Found 15 AWS instance types matching requirements (using fallback)
 ```
 
 ## Best Practices

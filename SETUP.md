@@ -25,9 +25,16 @@ curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
 
 ### 3. Python Dependencies
 
+Install the required Python packages. Note that Azure SDK dependencies have been added for improved authentication:
+
 ```bash
 pip install -r requirements.txt
 ```
+
+**New Dependencies:**
+- `azure-mgmt-resource>=23.0.0` - Azure Resource Management SDK for dynamic instance discovery
+- Enhanced `azure-mgmt-compute>=29.0.0` - For comprehensive VM size querying
+- `azure-identity>=1.12.0` - Secure authentication with DefaultAzureCredential
 
 ## Cloud Provider Setup
 
@@ -164,9 +171,25 @@ gcloud secrets create rclone_config_secret \
 
 ### Azure Setup
 
+**Important**: The system now uses dynamic instance discovery with proper Azure SDK authentication instead of hardcoded instance lists.
+
 1. Login to Azure:
 ```bash
 az login
+```
+
+**Authentication Setup:**
+The system now uses `DefaultAzureCredential` which supports multiple authentication methods:
+- **Azure CLI**: `az login` (recommended for local development)
+- **Managed Identity**: Automatic on Azure VMs
+- **Environment Variables**: For CI/CD scenarios
+- **Service Principal**: For production automation
+
+For environment variable authentication:
+```bash
+export AZURE_CLIENT_ID="your-client-id"
+export AZURE_CLIENT_SECRET="your-client-secret"
+export AZURE_TENANT_ID="your-tenant-id"
 ```
 
 2. Create resource group:
@@ -355,20 +378,79 @@ export GDRIVE_DEST_DIR="calculations/water_dimer"
 
 ## Troubleshooting
 
+### Authentication Issues
+
+**AWS Credential Validation:**
+The system now validates AWS credentials before querying instance types:
+```bash
+# Test AWS credentials
+aws sts get-caller-identity
+```
+Common errors:
+- `UnauthorizedOperation`: IAM permissions insufficient
+- `InvalidUserID.NotFound`: Credentials invalid or expired
+
+**GCP Credential Validation:**
+The system validates GCP credentials and provides helpful error messages:
+```bash
+# Test GCP credentials
+gcloud auth application-default login
+gcloud auth list
+```
+Common errors:
+- `could not find default credentials`: Run `gcloud auth application-default login`
+- `permission denied`: Service account lacks Compute Engine permissions
+
+**Azure Credential Validation:**
+The system now uses Azure SDK with proper credential validation:
+```bash
+# Test Azure credentials
+az account show
+az vm list-sizes --location eastus
+```
+Common errors:
+- `No Azure subscriptions accessible`: Login required or permissions insufficient
+- `Authentication failed`: Run `az login` or check environment variables
+
+### Dynamic Instance Discovery Issues
+
+**Rate Limiting:**
+The system implements rate limiting with exponential backoff to prevent API quota issues:
+- AWS: 10 calls/second, 50 burst limit
+- GCP: 10 calls/second, 30 burst limit
+- Azure: Uses SDK built-in throttling
+
+If you encounter rate limiting:
+```
+INFO: Rate limit burst exceeded, sleeping for 45.2s
+WARNING: API call failed (attempt 2/3), retrying in 2.1s
+```
+This is normal and the system will automatically retry.
+
+**Fallback Behavior:**
+If dynamic discovery fails, the system falls back to a basic instance set:
+```
+WARNING: Failed to query AWS instance types dynamically: [error]
+INFO: Using fallback instance types
+```
+
 ### AWS Issues
 - Ensure your account has spot instance limits
 - Check security group allows SSH (port 22)
 - Verify IAM role has necessary permissions
+- **NEW**: Check EC2 describe permissions for dynamic discovery
 
 ### GCP Issues
 - Enable billing for your project
 - Check quota limits for your desired regions
 - Ensure service account has proper permissions
+- **NEW**: Enable Compute Engine API for dynamic discovery
 
 ### Azure Issues
 - Verify subscription has sufficient quota
 - Check resource group exists
 - Ensure Key Vault access policies are configured
+- **NEW**: Install Azure SDK: `pip install azure-identity azure-mgmt-compute azure-mgmt-resource`
 
 ### Rclone Issues
 - Test rclone locally first: `rclone ls gdrive:`

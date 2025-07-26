@@ -4,12 +4,28 @@ This guide shows a complete example of using the cloud scheduler system.
 
 ## Step 1: Find Cheapest Instances
 
+**NEW**: The system now uses **dynamic instance discovery** to automatically find ALL available instance types from cloud provider APIs.
+
 ```bash
 python find_cheapest_instance.py
 ```
 
+**What happens:**
+1. **Credential validation** for AWS, GCP, and Azure
+2. **Dynamic API queries** to discover all available instance types
+3. **Real-time filtering** based on hardware requirements
+4. **Rate-limited requests** to prevent quota issues
+5. **Interactive selection** from optimized results
+
 **Output:**
 ```
+INFO: Validating AWS credentials...
+INFO: Found 247 AWS instance types matching requirements
+INFO: Validating GCP credentials...
+INFO: Found 156 GCP machine types matching requirements
+INFO: Validating Azure credentials...
+INFO: Found 89 Azure VM sizes matching requirements
+
 ====================================================================================================
 Provider | Instance Type        | Region         | vCPUs  | RAM (GB) | $/hour     | $/core/hr 
 ====================================================================================================
@@ -120,9 +136,23 @@ Files sync every 5 minutes. The instance will terminate automatically when compl
 
 ## Advanced Usage
 
-### Custom Configuration
+### Custom Hardware Requirements with Dynamic Discovery
 
 ```bash
+# System automatically discovers instances matching these requirements
+python find_cheapest_instance.py --min-vcpu 32 --max-vcpu 64 --min-ram 256
+
+# Use discovered instances for job submission
+python cloud_run.py my_job \
+  --s3-bucket my-shci-jobs \
+  --from-spot-prices \
+  --min-vcpu 32 --max-vcpu 64 --min-ram 256
+```
+
+### Specific Instance Type (Legacy Mode)
+
+```bash
+# Specify exact instance if you know what you want
 python cloud_run.py my_job \
   --s3-bucket my-shci-jobs \
   --provider AWS \
@@ -133,11 +163,17 @@ python cloud_run.py my_job \
   --exclude "*.bak" "debug_*"
 ```
 
-### Non-Interactive Mode
+### Non-Interactive Mode with Dynamic Discovery
 
 ```bash
-python find_cheapest_instance.py --no-interactive
-python cloud_run.py my_job --s3-bucket my-shci-jobs --index 0
+# Automatically find and use the cheapest instance
+python find_cheapest_instance.py --no-interactive --min-vcpu 16 --max-vcpu 32
+python cloud_run.py my_job --s3-bucket my-shci-jobs --from-spot-prices
 ```
 
-This automatically uses the cheapest instance without prompting.
+**Benefits of Dynamic Discovery:**
+- Always finds the latest instance types
+- No need to manually research available instances
+- Automatic filtering based on your exact requirements
+- Secure credential validation before API calls
+- Built-in rate limiting prevents quota issues
