@@ -1,0 +1,60 @@
+# Git files
+.git
+.gitignore
+
+# Documentation
+*.md
+docs/
+
+# Development files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Output files
+output/
+results/
+*.log
+*.out
+
+# Local configuration
+config.json
+cloud_jobs.db
+spot_prices.json
+launch_result.json
+job_*.json
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Temporary files
+*.tmp
+*.bak
+
+# Job management files
+cloud_status.py
+cloud_resync.py
+cloud_terminate.py
+cloud_list.py
+cloud_run.py
+job_manager.py
+launch_job.py
+find_cheapest_instance.py

@@ -24,5 +24,11 @@
     "admin_password": "ChangeMe123!@#",
     "key_vault_name": "cloud-scheduler-vault",
     "disk_size_gb": 100
+  },
+  "docker": {
+    "enabled": true,
+    "image": "ghcr.io/cloud-scheduler/quantum-chemistry:latest",
+    "registry_username": "",
+    "registry_password": ""
   }
 }

@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  quantum-chemistry:
+    build: .
+    container_name: quantum-calc
+    volumes:
+      - ./output:/app/output
+      - ./input:/app/input:ro
+    environment:
+      - JOB_ID=${JOB_ID:-local-test}
+      - S3_BUCKET=${S3_BUCKET:-}
+      - S3_INPUT_PATH=${S3_INPUT_PATH:-}
+      - GDRIVE_PATH=${GDRIVE_PATH:-test/results}
+      - BASIS_SET=${BASIS_SET:-aug-cc-pVDZ}
+      - SHCI_EXECUTABLE=${SHCI_EXECUTABLE:-./shci_program}
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}
+      - RCLONE_SECRET_NAME=${RCLONE_SECRET_NAME:-rclone_config_secret}
+    networks:
+      - quantum-net
+    restart: "no"
+
+networks:
+  quantum-net:
+    driver: bridge

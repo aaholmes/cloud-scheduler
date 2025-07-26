@@ -113,12 +113,22 @@ class CloudJobManager:
             'BASIS_SET': metadata['basis_set']
         }
         
+        # Add Docker image if specified
+        if job_config.get('docker_image'):
+            env_vars['DOCKER_IMAGE'] = job_config['docker_image']
+        
         # Add custom environment variables
         if 'environment' in metadata:
             env_vars.update(metadata['environment'])
         
+        # Choose bootstrap script based on Docker usage
+        if job_config.get('use_docker', False):
+            bootstrap_script_name = 'bootstrap-docker.sh'
+        else:
+            bootstrap_script_name = 'bootstrap.sh'
+        
         # Create modified bootstrap script with environment variables
-        bootstrap_content = self._create_custom_bootstrap(env_vars)
+        bootstrap_content = self._create_custom_bootstrap(env_vars, bootstrap_script_name)
         
         # Save custom bootstrap script
         bootstrap_path = f"/tmp/bootstrap_{self.job_id}.sh"
@@ -223,10 +233,10 @@ class CloudJobManager:
             if os.path.exists(bootstrap_path):
                 os.remove(bootstrap_path)
     
-    def _create_custom_bootstrap(self, env_vars: Dict[str, str]) -> str:
+    def _create_custom_bootstrap(self, env_vars: Dict[str, str], bootstrap_script: str = 'bootstrap.sh') -> str:
         """Create a custom bootstrap script with job-specific variables."""
         # Read the original bootstrap script
-        with open('bootstrap.sh', 'r') as f:
+        with open(bootstrap_script, 'r') as f:
             bootstrap_content = f.read()
         
         # Insert environment variables at the beginning
@@ -324,6 +334,12 @@ def main():
     parser.add_argument("--max-ram", type=int,
                        help="Maximum RAM in GB")
     
+    # Docker options
+    parser.add_argument("--docker", action="store_true",
+                       help="Use Docker containerized deployment")
+    parser.add_argument("--docker-image", 
+                       help="Docker image to use (default: from config or ghcr.io/cloud-scheduler/quantum-chemistry:latest)")
+    
     # Configuration
     parser.add_argument("--config", default="config.json", help="Configuration file")
     
@@ -391,8 +407,16 @@ def main():
     job_config = {
         'basis_set': args.basis,
         'shci_executable': args.shci_executable,
-        'exclude_patterns': args.exclude or []
+        'exclude_patterns': args.exclude or [],
+        'use_docker': args.docker
     }
+    
+    # Add Docker image if specified
+    if args.docker_image:
+        job_config['docker_image'] = args.docker_image
+    elif args.docker:
+        # Use default Docker image
+        job_config['docker_image'] = 'ghcr.io/cloud-scheduler/quantum-chemistry:latest'
     
     if args.gdrive_path:
         job_config['gdrive_path'] = args.gdrive_path

@@ -18,6 +18,7 @@ This project provides a complete workflow for:
 - Multi-cloud support (AWS, GCP, Azure)
 - Real-time spot price comparison with interactive selection
 - S3 staging for reliable file transfer
+- **Docker containerization** for reproducible environments
 - Automated instance provisioning
 - Configurable hardware requirements (vCPU, RAM)
 - Periodic result backup to Google Drive
@@ -62,7 +63,11 @@ python find_cheapest_instance.py --no-interactive
 
 4. Submit a job:
 ```bash
+# Traditional deployment
 python cloud_run.py ./my_job_files --s3-bucket my-shci-jobs --from-spot-prices
+
+# Docker deployment (recommended)
+python cloud_run.py ./my_job_files --s3-bucket my-shci-jobs --from-spot-prices --docker
 ```
 
 ## Project Structure
@@ -77,8 +82,13 @@ cloud-scheduler/
 ├── requirements.txt           # Python dependencies
 ├── config.example.json        # Example configuration file
 ├── config_profiles/           # Pre-configured calculation profiles
+├── container_scripts/         # Docker container scripts
+├── Dockerfile                 # Container image definition
+├── docker-compose.yml         # Local development setup
+├── bootstrap-docker.sh        # Docker-based bootstrap script
 ├── SETUP.md                   # Detailed setup instructions
 ├── CONFIGURATION.md           # Configuration guide and profiles
+├── DOCKER.md                  # Docker containerization guide
 ├── example_usage.md           # Complete usage walkthrough
 └── README.md                  # This file
 ```
