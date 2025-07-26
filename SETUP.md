@@ -33,6 +33,64 @@ pip install -r requirements.txt
 
 ### AWS Setup
 
+#### S3 Bucket Setup (Required for Job Staging)
+
+1. Create S3 bucket for job staging:
+```bash
+# Create bucket (use your own unique name)
+aws s3 mb s3://my-shci-jobs --region us-east-1
+
+# Enable versioning (optional but recommended)
+aws s3api put-bucket-versioning \
+  --bucket my-shci-jobs \
+  --versioning-configuration Status=Enabled
+
+# Set lifecycle policy to auto-delete old files (optional)
+cat > lifecycle.json << EOF
+{
+  "Rules": [{
+    "ID": "DeleteOldJobFiles",
+    "Status": "Enabled",
+    "Filter": {"Prefix": ""},
+    "Expiration": {"Days": 30}
+  }]
+}
+EOF
+
+aws s3api put-bucket-lifecycle-configuration \
+  --bucket my-shci-jobs \
+  --lifecycle-configuration file://lifecycle.json
+```
+
+2. Update IAM role to include S3 access:
+```bash
+# Create S3 policy
+cat > s3-policy.json << EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": [
+      "s3:GetObject",
+      "s3:ListBucket"
+    ],
+    "Resource": [
+      "arn:aws:s3:::my-shci-jobs/*",
+      "arn:aws:s3:::my-shci-jobs"
+    ]
+  }]
+}
+EOF
+
+# Attach to role
+aws iam put-role-policy \
+  --role-name cloud-scheduler-role \
+  --policy-name S3AccessPolicy \
+  --policy-document file://s3-policy.json
+```
+
+### AWS General Setup
+
 1. Configure AWS credentials:
 ```bash
 aws configure
@@ -194,7 +252,41 @@ This will:
 - Filter by hardware requirements (16-32 vCPUs, 64-256GB RAM)
 - Save results to `spot_prices.json`
 
-### 2. Launch an instance:
+### 2. Submit a job with S3 staging (Recommended):
+
+The `cloud_run.py` script handles the complete workflow:
+
+```bash
+# Submit job using cheapest instance
+python cloud_run.py /path/to/job/files \
+  --s3-bucket my-shci-jobs \
+  --from-spot-prices
+
+# Submit with specific instance
+python cloud_run.py /path/to/job/files \
+  --s3-bucket my-shci-jobs \
+  --provider AWS \
+  --instance r7i.8xlarge \
+  --region us-east-1
+
+# Custom options
+python cloud_run.py /path/to/job/files \
+  --s3-bucket my-shci-jobs \
+  --from-spot-prices \
+  --basis cc-pVTZ \
+  --gdrive-path "calculations/water_dimer_$(date +%Y%m%d)" \
+  --exclude "*.bak" "*.old"
+```
+
+This will:
+1. Upload your job files to S3 (excluding FCIDUMP files)
+2. Launch the spot instance with custom bootstrap
+3. Instance downloads files from S3
+4. Runs calculation
+5. Syncs results to Google Drive (excluding FCIDUMP)
+6. Terminates automatically
+
+### 3. Direct instance launch (Advanced):
 
 Option A - Launch the cheapest instance:
 ```bash
@@ -206,7 +298,7 @@ Option B - Launch specific instance:
 python launch_job.py --provider AWS --instance r7i.8xlarge --region us-east-1
 ```
 
-### 3. Monitor progress:
+### 4. Monitor progress:
 
 The instance will:
 - Install dependencies automatically

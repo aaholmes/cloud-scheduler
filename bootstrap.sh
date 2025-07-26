@@ -134,7 +134,9 @@ rclone sync "$OUTPUT_DIR" "${GDRIVE_REMOTE}:${GDRIVE_DEST_DIR}" \
     --create-empty-src-dirs \
     --progress \
     --log-file="$OUTPUT_DIR/rclone.log" \
-    --log-level INFO
+    --log-level INFO \
+    --exclude "FCIDUMP" \
+    --exclude "*.tmp"
 
 if [ $? -eq 0 ]; then
     echo "[$(date)] Sync completed successfully"

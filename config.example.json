@@ -4,7 +4,8 @@
     "security_group": "cloud-scheduler-sg",
     "iam_role": "cloud-scheduler-role",
     "max_price": 5.0,
-    "disk_size_gb": 100
+    "disk_size_gb": 100,
+    "s3_bucket": "my-shci-jobs"
   },
   "gcp": {
     "project_id": "my-gcp-project",

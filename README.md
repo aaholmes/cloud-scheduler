@@ -7,18 +7,21 @@ Automated system for finding the cheapest cloud spot instances across AWS, GCP, 
 This project provides a complete workflow for:
 1. **Price Discovery** - Queries spot instance prices across all major cloud providers
 2. **Instance Selection** - Finds the cheapest instance meeting your hardware requirements
-3. **Automated Deployment** - Launches instances with pre-configured bootstrap scripts
-4. **Calculation Execution** - Runs quantum chemistry calculations (SHCI/PySCF)
-5. **Result Syncing** - Automatically syncs results to Google Drive during execution
-6. **Cost Optimization** - Auto-terminates instances after completion
+3. **File Staging** - Uploads job files to S3 for reliable transfer to instances
+4. **Automated Deployment** - Launches instances with pre-configured bootstrap scripts
+5. **Calculation Execution** - Runs quantum chemistry calculations (SHCI/PySCF)
+6. **Result Syncing** - Automatically syncs results to Google Drive (excluding large FCIDUMP files)
+7. **Cost Optimization** - Auto-terminates instances after completion
 
 ## Features
 
 - Multi-cloud support (AWS, GCP, Azure)
 - Real-time spot price comparison
+- S3 staging for reliable file transfer
 - Automated instance provisioning
 - Configurable hardware requirements (vCPU, RAM)
 - Periodic result backup to Google Drive
+- FCIDUMP exclusion from syncs to save bandwidth/storage
 - Self-terminating instances to minimize costs
 - Support for custom SHCI repositories
 - Robust error handling and logging
@@ -30,9 +33,10 @@ This project provides a complete workflow for:
 pip install -r requirements.txt
 ```
 
-2. Configure cloud credentials:
+2. Configure cloud credentials and S3:
 ```bash
 aws configure
+aws s3 mb s3://my-shci-jobs  # Create S3 bucket
 gcloud auth login
 az login
 ```
@@ -42,9 +46,9 @@ az login
 python find_cheapest_instance.py
 ```
 
-4. Launch the cheapest instance:
+4. Submit a job:
 ```bash
-python launch_job.py --from-file spot_prices.json --index 0
+python cloud_run.py ./my_job_files --s3-bucket my-shci-jobs --from-spot-prices
 ```
 
 ## Project Structure
@@ -52,6 +56,7 @@ python launch_job.py --from-file spot_prices.json --index 0
 ```
 cloud-scheduler/
 ├── find_cheapest_instance.py  # Spot price discovery across clouds
+├── cloud_run.py               # Main job submission interface with S3 staging
 ├── launch_job.py              # Instance launcher with provider abstraction
 ├── bootstrap.sh               # Instance initialization script
 ├── run_calculation.py         # Quantum chemistry calculation runner
@@ -126,9 +131,11 @@ gdrive:shci_project/results_YYYY-MM-DD_HH-MM-SS/
 ├── calculation.log
 ├── calculation_summary.json
 ├── results.txt
-├── FCIDUMP
-└── shci.out
+├── shci.out
+└── (FCIDUMP excluded from sync)
 ```
+
+Note: FCIDUMP files are automatically excluded from Google Drive syncs to save bandwidth and storage space. They remain available on the S3 bucket if needed.
 
 ## Monitoring
 
