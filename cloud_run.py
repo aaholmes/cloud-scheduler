@@ -84,24 +84,32 @@ class CloudJobManager:
         return metadata
     
     def launch_job(self, provider: str, instance_type: str, region: str, 
-                   job_dir: str, job_config: Dict[str, Any]) -> Dict[str, Any]:
+                   job_dir: str, job_config: Dict[str, Any], dry_run: bool = False) -> Dict[str, Any]:
         """Upload files to S3 and launch the job on specified instance."""
         
-        # Upload files to S3
-        s3_path = self.upload_job_files(job_dir, job_config.get('exclude_patterns'))
+        # Upload files to S3 (unless dry run)
+        if not dry_run:
+            s3_path = self.upload_job_files(job_dir, job_config.get('exclude_patterns'))
+        else:
+            s3_path = f"s3://{self.s3_bucket}/{self.job_id}/input/"
+            logger.info(f"[DRY RUN] Would upload files from {job_dir} to {s3_path}")
         
         # Create job metadata
         metadata = self.create_job_metadata(job_config, s3_path)
         
-        # Save metadata to S3
-        metadata_key = f"{self.job_id}/metadata.json"
-        self.s3_client.put_object(
-            Bucket=self.s3_bucket,
-            Key=metadata_key,
-            Body=json.dumps(metadata, indent=2),
-            ContentType='application/json'
-        )
-        logger.info(f"Job metadata saved to s3://{self.s3_bucket}/{metadata_key}")
+        if not dry_run:
+            # Save metadata to S3
+            metadata_key = f"{self.job_id}/metadata.json"
+            self.s3_client.put_object(
+                Bucket=self.s3_bucket,
+                Key=metadata_key,
+                Body=json.dumps(metadata, indent=2),
+                ContentType='application/json'
+            )
+            logger.info(f"Job metadata saved to s3://{self.s3_bucket}/{metadata_key}")
+        else:
+            logger.info(f"[DRY RUN] Would save metadata to s3://{self.s3_bucket}/{self.job_id}/metadata.json")
+            logger.info(f"[DRY RUN] Metadata preview:\n{json.dumps(metadata, indent=2)}")
         
         # Update bootstrap script with job-specific environment variables
         env_vars = {
@@ -136,31 +144,73 @@ class CloudJobManager:
             f.write(bootstrap_content)
         os.chmod(bootstrap_path, 0o755)
         
-        # Initialize job manager and create job record
-        jm = get_job_manager()
+        if not dry_run:
+            # Initialize job manager and create job record
+            jm = get_job_manager()
+            
+            # Create initial job record
+            initial_job_config = {
+                's3_bucket': self.s3_bucket,  
+                's3_input_path': s3_path,
+                'gdrive_path': metadata['gdrive_path'],
+                'basis_set': metadata['basis_set'],
+                'price_per_hour': 0.0  # Will be updated after launch
+            }
+            
+            initial_launch_result = {
+                'status': 'launching',
+                'provider': provider,
+                'instance_type': instance_type,
+                'region': region,
+                'job_id': self.job_id
+            }
+            
+            # Create job record
+            if not jm.create_job(self.job_id, initial_job_config, initial_launch_result):
+                logger.error("Failed to create job record in database")
+                return {'status': 'failed', 'error': 'Database error'}
+        else:
+            logger.info(f"[DRY RUN] Would create job record in database for job {self.job_id}")
+            logger.info(f"[DRY RUN] Provider: {provider}, Instance: {instance_type}, Region: {region}")
         
-        # Create initial job record
-        initial_job_config = {
-            's3_bucket': self.s3_bucket,  
-            's3_input_path': s3_path,
-            'gdrive_path': metadata['gdrive_path'],
-            'basis_set': metadata['basis_set'],
-            'price_per_hour': 0.0  # Will be updated after launch
-        }
+        if dry_run:
+            # In dry run mode, just show what would be launched
+            logger.info(f"[DRY RUN] Would launch instance with command:")
+            launch_cmd = [
+                sys.executable, 'launch_job.py',
+                '--provider', provider,
+                '--instance', instance_type,
+                '--region', region,
+                '--config', 'config.json'
+            ]
+            logger.info(f"[DRY RUN] Command: {' '.join(launch_cmd)}")
+            logger.info(f"[DRY RUN] Bootstrap script would be created at: {bootstrap_path}")
+            
+            # Show bootstrap script preview
+            with open(bootstrap_path, 'r') as f:
+                bootstrap_preview = f.read()
+            logger.info(f"[DRY RUN] Bootstrap script preview (first 500 chars):")
+            logger.info(bootstrap_preview[:500] + "..." if len(bootstrap_preview) > 500 else bootstrap_preview)
+            
+            # Clean up temp files
+            if os.path.exists(bootstrap_path):
+                os.remove(bootstrap_path)
+            
+            # Return mock successful result
+            mock_result = {
+                'status': 'dry_run_success',
+                'job_id': self.job_id,
+                'provider': provider,
+                'instance_type': instance_type,
+                'region': region,
+                's3_path': s3_path,
+                'gdrive_path': metadata['gdrive_path'],
+                'message': 'Dry run completed successfully - no instance was launched'
+            }
+            
+            return mock_result
         
-        initial_launch_result = {
-            'status': 'launching',
-            'provider': provider,
-            'instance_type': instance_type,
-            'region': region,
-            'job_id': self.job_id
-        }
-        
-        # Create job record
-        if not jm.create_job(self.job_id, initial_job_config, initial_launch_result):
-            logger.error("Failed to create job record in database")
-            return {'status': 'failed', 'error': 'Database error'}
-        
+        # Normal launch process (not dry run)
         # Launch instance using existing launch_job.py
         launch_cmd = [
             sys.executable, 'launch_job.py',
@@ -343,6 +393,10 @@ def main():
     # Configuration
     parser.add_argument("--config", default="config.json", help="Configuration file")
     
+    # Dry run mode
+    parser.add_argument("--dry-run", action="store_true",
+                       help="Perform all steps except launching the actual instance")
+    
     args = parser.parse_args()
     
     # Validate job directory
@@ -425,10 +479,24 @@ def main():
     manager = CloudJobManager(args.s3_bucket, args.config)
     
     # Launch the job
-    logger.info(f"Launching job {manager.job_id}")
-    result = manager.launch_job(provider, instance, region, args.job_dir, job_config)
+    if args.dry_run:
+        logger.info(f"=== DRY RUN MODE - NO INSTANCE WILL BE LAUNCHED ===")
+        logger.info(f"Preparing dry run for job {manager.job_id}")
+    else:
+        logger.info(f"Launching job {manager.job_id}")
     
-    if result.get('status') == 'launched' or result.get('status') != 'failed':
+    result = manager.launch_job(provider, instance, region, args.job_dir, job_config, dry_run=args.dry_run)
+    
+    if result.get('status') == 'dry_run_success':
+        logger.info(f"\n=== DRY RUN COMPLETED SUCCESSFULLY ===")
+        logger.info(f"Job ID: {manager.job_id}")
+        logger.info(f"Provider: {result['provider']}")
+        logger.info(f"Instance Type: {result['instance_type']}")
+        logger.info(f"Region: {result['region']}")
+        logger.info(f"S3 Path: {result['s3_path']}")
+        logger.info(f"Google Drive Path: {result['gdrive_path']}")
+        logger.info(f"\nTo actually launch this job, run the same command without --dry-run")
+    elif result.get('status') == 'launched' or result.get('status') != 'failed':
         logger.info(f"\nJob {manager.job_id} launched successfully!")
         logger.info(f"Input files: s3://{args.s3_bucket}/{manager.job_id}/input/")
         logger.info(f"Results will sync to: gdrive:{job_config.get('gdrive_path', f'shci_jobs/{manager.job_id}')}")
