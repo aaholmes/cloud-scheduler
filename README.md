@@ -16,7 +16,7 @@ This project provides a complete workflow for:
 ## Features
 
 - Multi-cloud support (AWS, GCP, Azure)
-- Real-time spot price comparison
+- Real-time spot price comparison with interactive selection
 - S3 staging for reliable file transfer
 - Automated instance provisioning
 - Configurable hardware requirements (vCPU, RAM)
@@ -46,6 +46,20 @@ az login
 python find_cheapest_instance.py
 ```
 
+This displays instances with both hourly and per-core pricing, then presents an interactive menu:
+
+**Option 1**: Cheapest per-core instance  
+**Option 2**: Cheapest overall instance (if different from option 1)  
+**Option 3**: Higher memory alternative (if available and cost-effective)  
+**Option 4**: Abort
+
+Your selection is saved as index 0 in `spot_prices.json` for easy use with `cloud_run.py --from-spot-prices`.
+
+For non-interactive mode:
+```bash
+python find_cheapest_instance.py --no-interactive
+```
+
 4. Submit a job:
 ```bash
 python cloud_run.py ./my_job_files --s3-bucket my-shci-jobs --from-spot-prices
@@ -55,7 +69,7 @@ python cloud_run.py ./my_job_files --s3-bucket my-shci-jobs --from-spot-prices
 
 ```
 cloud-scheduler/
-├── find_cheapest_instance.py  # Spot price discovery across clouds
+├── find_cheapest_instance.py  # Spot price discovery with interactive selection
 ├── cloud_run.py               # Main job submission interface with S3 staging
 ├── launch_job.py              # Instance launcher with provider abstraction
 ├── bootstrap.sh               # Instance initialization script
@@ -63,6 +77,7 @@ cloud-scheduler/
 ├── requirements.txt           # Python dependencies
 ├── config.example.json        # Example configuration file
 ├── SETUP.md                   # Detailed setup instructions
+├── example_usage.md           # Complete usage walkthrough
 └── README.md                  # This file
 ```
 

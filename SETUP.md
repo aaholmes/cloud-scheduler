@@ -250,7 +250,18 @@ python find_cheapest_instance.py
 This will:
 - Query spot prices across all providers
 - Filter by hardware requirements (16-32 vCPUs, 64-256GB RAM)
-- Save results to `spot_prices.json`
+- Display top 20 instances with hourly and per-core pricing
+- Present interactive selection menu:
+  - Option 1: Cheapest per-core instance
+  - Option 2: Cheapest overall instance (if different from option 1)
+  - Option 3: Higher memory alternative (if available and cost-effective)
+  - Option 4: Abort
+- Save your selection as index 0 in `spot_prices.json`
+
+For automated workflows:
+```bash
+python find_cheapest_instance.py --no-interactive
+```
 
 ### 2. Submit a job with S3 staging (Recommended):
 

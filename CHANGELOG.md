@@ -1,5 +1,20 @@
 # Changelog
 
+## [2024-01-26] - Interactive Instance Selection
+
+### Added
+- Interactive selection menu in `find_cheapest_instance.py`
+  - Option 1: Cheapest per-core instance
+  - Option 2: Cheapest overall instance (if different from option 1)
+  - Option 3: Higher memory alternative (within 20% per-core price)
+  - Option 4: Abort
+- Price per core column in instance listing
+- `--no-interactive` flag for automated workflows
+- Selected instance is saved as index 0 in spot_prices.json
+
+### Changed
+- Instance table now shows $/core/hour for better comparison
+
 ## [2024-01-26] - S3 Staging and FCIDUMP Exclusion
 
 ### Added
