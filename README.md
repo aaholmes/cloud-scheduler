@@ -1,22 +1,27 @@
 # Cloud Scheduler
 
-Automated system for finding the cheapest cloud spot instances across AWS, GCP, and Azure, launching quantum chemistry calculations, and syncing results to Google Drive.
+Automated system for finding the cheapest cloud spot instances across AWS, GCP, and Azure, launching quantum chemistry calculations, and syncing results to Google Drive. Now includes comprehensive **cost tracking and budgeting** capabilities.
 
 ## Overview
 
 This project provides a complete workflow for:
 1. **Price Discovery** - Queries spot instance prices across all major cloud providers
 2. **Instance Selection** - Finds the cheapest instance meeting your hardware requirements
-3. **File Staging** - Uploads job files to S3 for reliable transfer to instances
-4. **Automated Deployment** - Launches instances with pre-configured bootstrap scripts
-5. **Calculation Execution** - Runs quantum chemistry calculations (SHCI/PySCF)
-6. **Result Syncing** - Automatically syncs results to Google Drive (excluding large FCIDUMP files)
-7. **Cost Optimization** - Auto-terminates instances after completion
+3. **Budget Validation** - Prevents job launches that exceed cost limits
+4. **File Staging** - Uploads job files to S3 for reliable transfer to instances
+5. **Automated Deployment** - Launches instances with pre-configured bootstrap scripts
+6. **Calculation Execution** - Runs quantum chemistry calculations (SHCI/PySCF)
+7. **Result Syncing** - Automatically syncs results to Google Drive (excluding large FCIDUMP files)
+8. **Cost Tracking** - Retrieves actual costs from cloud provider billing APIs
+9. **Cost Analysis** - Comprehensive reporting on spending patterns and budget performance
 
 ## Features
 
 - Multi-cloud support (AWS, GCP, Azure)
 - Real-time spot price comparison with interactive selection
+- **Cost tracking and budgeting** with billing API integration
+- **Budget validation** to prevent expensive job launches  
+- **Comprehensive cost reporting** and analysis tools
 - S3 staging for reliable file transfer
 - **Docker containerization** for reproducible environments
 - Automated instance provisioning
@@ -77,6 +82,10 @@ cloud-scheduler/
 ├── find_cheapest_instance.py  # Spot price discovery with interactive selection
 ├── cloud_run.py               # Main job submission interface with S3 staging
 ├── launch_job.py              # Instance launcher with provider abstraction
+├── job_manager.py             # Job tracking and cost database management
+├── cost_tracker.py            # Cloud provider billing API integration
+├── cloud_cost_report.py       # Cost reporting and analysis tools
+├── update_job_completion.py   # Job completion and cost tracking workflow
 ├── bootstrap.sh               # Instance initialization script
 ├── run_calculation.py         # Quantum chemistry calculation runner
 ├── requirements.txt           # Python dependencies
@@ -89,6 +98,7 @@ cloud-scheduler/
 ├── SETUP.md                   # Detailed setup instructions
 ├── CONFIGURATION.md           # Configuration guide and profiles
 ├── DOCKER.md                  # Docker containerization guide
+├── COST_TRACKING.md           # Cost tracking and budgeting guide
 ├── example_usage.md           # Complete usage walkthrough
 └── README.md                  # This file
 ```
@@ -125,6 +135,36 @@ Configure hardware requirements in `config.json` or via command-line arguments:
    - `small_calculation.json` - 4-16 vCPUs, 16-64GB RAM
    - `large_calculation.json` - 32-128 vCPUs, 256-1024GB RAM  
    - `memory_intensive.json` - 16-64 vCPUs, 128-512GB RAM
+
+## Cost Tracking and Budgeting
+
+The system now includes comprehensive cost tracking that integrates with cloud provider billing APIs:
+
+### Budget Validation
+```bash
+# Set budget limit to prevent expensive job launches
+python cloud_run.py my_job --s3-bucket my-bucket --budget 10.00 --estimated-runtime 3.0
+```
+
+### Cost Reporting
+```bash
+# View detailed cost summary for a job
+python cloud_cost_report.py job <job-id>
+
+# Analyze cost trends over time
+python cloud_cost_report.py trends --days 30
+
+# Compare costs across cloud providers
+python cloud_cost_report.py compare
+```
+
+### Automatic Cost Retrieval
+After job completion, actual costs are automatically retrieved from:
+- **AWS Cost Explorer API** - Detailed spot instance costs
+- **GCP Cloud Billing API** - Preemptible instance costs  
+- **Azure Cost Management API** - Spot VM costs
+
+**See [COST_TRACKING.md](COST_TRACKING.md) for detailed documentation.**
 
 ## Supported Instance Types
 

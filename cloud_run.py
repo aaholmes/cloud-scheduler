@@ -229,6 +229,17 @@ class CloudJobManager:
         
         shutil.copy(bootstrap_path, 'bootstrap.sh')
         
+        # Also copy required Python scripts for job completion
+        required_scripts = ['update_job_completion.py', 'job_manager.py', 'cost_tracker.py']
+        temp_script_files = []
+        
+        for script in required_scripts:
+            if os.path.exists(script):
+                temp_name = f'{script}.launch'
+                shutil.copy(script, temp_name)
+                temp_script_files.append(temp_name)
+                logger.info(f"Prepared {script} for upload to instance")
+        
         try:
             # Run launch command
             import subprocess
@@ -282,6 +293,11 @@ class CloudJobManager:
             # Clean up temp files
             if os.path.exists(bootstrap_path):
                 os.remove(bootstrap_path)
+            
+            # Clean up temporary script files
+            for temp_file in temp_script_files:
+                if os.path.exists(temp_file):
+                    os.remove(temp_file)
     
     def _create_custom_bootstrap(self, env_vars: Dict[str, str], bootstrap_script: str = 'bootstrap.sh') -> str:
         """Create a custom bootstrap script with job-specific variables."""
@@ -384,6 +400,12 @@ def main():
     parser.add_argument("--max-ram", type=int,
                        help="Maximum RAM in GB")
     
+    # Budget control
+    parser.add_argument("--budget", type=float,
+                       help="Maximum budget limit for the job in USD")
+    parser.add_argument("--estimated-runtime", type=float, default=2.0,
+                       help="Estimated runtime in hours for budget calculation (default: 2.0)")
+    
     # Docker options
     parser.add_argument("--docker", action="store_true",
                        help="Use Docker containerized deployment")
@@ -423,6 +445,11 @@ def main():
             if args.max_ram:
                 find_cmd.extend(['--max-ram', str(args.max_ram)])
             
+            # Add budget constraints if specified
+            if args.budget:
+                find_cmd.extend(['--budget', str(args.budget)])
+                find_cmd.extend(['--estimated-runtime', str(args.estimated_runtime)])
+            
             # Run in non-interactive mode
             find_cmd.append('--no-interactive')
             
@@ -457,12 +484,37 @@ def main():
         instance = args.instance
         region = args.region
     
+    # Validate budget if specified
+    price_per_hour = None
+    if args.budget is not None:
+        # Get price per hour from selection
+        if 'selected' in locals():
+            price_per_hour = selected.get('price_hr', 0.0)
+        else:
+            # Need to get price for manually specified instance
+            logger.warning("Budget specified but price information not available. Budget validation skipped.")
+        
+        if price_per_hour:
+            estimated_cost = price_per_hour * args.estimated_runtime
+            
+            if estimated_cost > args.budget:
+                logger.error(f"Estimated cost ${estimated_cost:.4f} exceeds budget ${args.budget:.2f}")
+                logger.error(f"Instance: {instance} @ ${price_per_hour:.4f}/hour for {args.estimated_runtime} hours")
+                logger.error("Use --estimated-runtime to adjust runtime estimate or increase --budget")
+                sys.exit(1)
+            
+            budget_usage = (estimated_cost / args.budget) * 100
+            logger.info(f"Budget check passed: ${estimated_cost:.4f} / ${args.budget:.2f} ({budget_usage:.1f}% of budget)")
+    
     # Create job configuration
     job_config = {
         'basis_set': args.basis,
         'shci_executable': args.shci_executable,
         'exclude_patterns': args.exclude or [],
-        'use_docker': args.docker
+        'use_docker': args.docker,
+        'budget_limit': args.budget,
+        'estimated_runtime': args.estimated_runtime,
+        'price_per_hour': price_per_hour or 0.0
     }
     
     # Add Docker image if specified

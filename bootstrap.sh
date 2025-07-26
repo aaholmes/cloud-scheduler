@@ -92,6 +92,31 @@ fi
 # Set proper permissions
 sudo chown -R $(basename $HOME_DIR):$(basename $HOME_DIR) $HOME_DIR/.config
 
+# --- Setup Cloud Scheduler Integration ---
+echo "Setting up cloud scheduler integration..."
+
+# Create cloud scheduler directory
+sudo mkdir -p /opt/cloud-scheduler
+sudo chmod 755 /opt/cloud-scheduler
+
+# Copy job completion script if available
+if [ -f /var/lib/cloud/instance/scripts/update_job_completion.py ]; then
+    sudo cp /var/lib/cloud/instance/scripts/update_job_completion.py /opt/cloud-scheduler/
+    sudo chmod +x /opt/cloud-scheduler/update_job_completion.py
+elif [ -f /tmp/update_job_completion.py ]; then
+    sudo cp /tmp/update_job_completion.py /opt/cloud-scheduler/
+    sudo chmod +x /opt/cloud-scheduler/update_job_completion.py
+fi
+
+# Copy other required scripts for job management
+for script in job_manager.py cost_tracker.py; do
+    if [ -f /var/lib/cloud/instance/scripts/$script ]; then
+        sudo cp /var/lib/cloud/instance/scripts/$script /opt/cloud-scheduler/
+    elif [ -f /tmp/$script ]; then
+        sudo cp /tmp/$script /opt/cloud-scheduler/
+    fi
+done
+
 # --- Get and Build Code ---
 echo "Setting up computation code..."
 cd $HOME_DIR
@@ -186,6 +211,15 @@ $HOME_DIR/sync_results.sh "\$OUTPUT_DIR" "\$GDRIVE_REMOTE" "\$GDRIVE_DEST_DIR"
 
 # Create completion marker
 echo "Calculation completed at $(date)" > \$OUTPUT_DIR/COMPLETED
+
+# Update job completion status (if job completion script is available)
+if [ -f /opt/cloud-scheduler/update_job_completion.py ] && [ -n "\${JOB_ID:-}" ]; then
+    echo "Updating job completion status..."
+    ${PYTHON_PACKAGE} /opt/cloud-scheduler/update_job_completion.py \\
+        --job-id "\$JOB_ID" \\
+        --output-dir "\$OUTPUT_DIR" \\
+        --status completed || echo "Failed to update job status"
+fi
 
 # Final sync with completion marker
 $HOME_DIR/sync_results.sh "\$OUTPUT_DIR" "\$GDRIVE_REMOTE" "\$GDRIVE_DEST_DIR"

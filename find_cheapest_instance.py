@@ -424,6 +424,14 @@ def main():
     parser.add_argument("--max-ram", type=int,
                        help=f"Maximum RAM in GB (default: {DEFAULT_MAX_RAM_GB})")
     
+    # Budget filtering
+    parser.add_argument("--max-price-per-hour", type=float,
+                       help="Maximum price per hour in USD")
+    parser.add_argument("--budget", type=float,
+                       help="Total budget limit in USD")
+    parser.add_argument("--estimated-runtime", type=float, default=2.0,
+                       help="Estimated runtime in hours for budget calculation (default: 2.0)")
+    
     args = parser.parse_args()
     
     # Load hardware configuration
@@ -472,6 +480,23 @@ def main():
     ]
     
     logger.info(f"Found {len(filtered)} instances meeting hardware requirements")
+    
+    # Apply budget filtering if specified
+    if args.max_price_per_hour is not None:
+        before_count = len(filtered)
+        filtered = [inst for inst in filtered if inst['price_hr'] <= args.max_price_per_hour]
+        logger.info(f"Budget filter (max ${args.max_price_per_hour:.4f}/hour): {before_count} -> {len(filtered)} instances")
+    
+    if args.budget is not None:
+        max_hourly_cost = args.budget / args.estimated_runtime
+        before_count = len(filtered)
+        filtered = [inst for inst in filtered if inst['price_hr'] <= max_hourly_cost]
+        logger.info(f"Budget filter (${args.budget:.2f} budget / {args.estimated_runtime}h = max ${max_hourly_cost:.4f}/hour): {before_count} -> {len(filtered)} instances")
+    
+    if not filtered:
+        logger.error("No instances meet the specified requirements and budget constraints")
+        logger.error("Try adjusting --min-vcpu, --max-vcpu, --min-ram, --max-ram, --budget, or --estimated-runtime")
+        return
     
     # Sort by price
     sorted_instances = sorted(filtered, key=lambda x: x['price_hr'])
