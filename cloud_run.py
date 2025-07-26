@@ -70,10 +70,10 @@ class CloudJobManager:
             'job_id': self.job_id,
             's3_input_path': s3_path,
             's3_bucket': self.s3_bucket,
-            'gdrive_path': job_config.get('gdrive_path', f'shci_jobs/{self.job_id}'),
-            'shci_executable': job_config.get('shci_executable', './shci_program'),
-            'basis_set': job_config.get('basis_set', 'aug-cc-pVDZ'),
-            'calculation_type': job_config.get('calculation_type', 'shci'),
+            'gdrive_path': job_config.get('gdrive_path', f'compute_jobs/{self.job_id}'),
+            'compute_executable': job_config.get('compute_executable', './compute_program'),
+            'job_type': job_config.get('job_type', 'computational'),
+            'calculation_type': job_config.get('calculation_type', 'compute'),
             'timestamp': time.strftime('%Y-%m-%d_%H-%M-%S')
         }
         
@@ -117,8 +117,8 @@ class CloudJobManager:
             'S3_BUCKET': self.s3_bucket,
             'S3_INPUT_PATH': s3_path,
             'GDRIVE_PATH': metadata['gdrive_path'],
-            'SHCI_EXECUTABLE': metadata['shci_executable'],
-            'BASIS_SET': metadata['basis_set']
+            'COMPUTE_EXECUTABLE': metadata['compute_executable'],
+            'JOB_TYPE': metadata['job_type']
         }
         
         # Add Docker image if specified
@@ -153,7 +153,7 @@ class CloudJobManager:
                 's3_bucket': self.s3_bucket,  
                 's3_input_path': s3_path,
                 'gdrive_path': metadata['gdrive_path'],
-                'basis_set': metadata['basis_set'],
+                'job_type': metadata['job_type'],
                 'price_per_hour': 0.0  # Will be updated after launch
             }
             
@@ -346,16 +346,16 @@ fi
             s3_download + "\n# --- Get and Build Code ---"
         )
         
-        # Update the rclone sync command to exclude FCIDUMP
+        # Update the rclone sync command to exclude large files
         modified_content = modified_content.replace(
             'rclone sync "$OUTPUT_DIR" "${GDRIVE_REMOTE}:${GDRIVE_DEST_DIR}"',
-            'rclone sync "$OUTPUT_DIR" "${GDRIVE_REMOTE}:${GDRIVE_PATH}" --exclude "FCIDUMP" --exclude "*.tmp"'
+            'rclone sync "$OUTPUT_DIR" "${GDRIVE_REMOTE}:${GDRIVE_PATH}" --exclude "*.large" --exclude "*.tmp"'
         )
         
         # Update the output directory path to use GDRIVE_PATH
         modified_content = modified_content.replace(
-            'GDRIVE_DEST_DIR="${GDRIVE_DEST_DIR:-shci_project/results_$(date +%Y-%m-%d_%H-%M-%S)}"',
-            'GDRIVE_PATH="${GDRIVE_PATH:-shci_project/results_$(date +%Y-%m-%d_%H-%M-%S)}"'
+            'GDRIVE_DEST_DIR="${GDRIVE_DEST_DIR:-compute_project/results_$(date +%Y-%m-%d_%H-%M-%S)}"',
+            'GDRIVE_PATH="${GDRIVE_PATH:-compute_project/results_$(date +%Y-%m-%d_%H-%M-%S)}"'
         )
         
         # Replace all instances of GDRIVE_DEST_DIR with GDRIVE_PATH
@@ -385,8 +385,8 @@ def main():
     # Job configuration
     parser.add_argument("--basis", default="aug-cc-pVDZ", help="Basis set for calculation")
     parser.add_argument("--gdrive-path", help="Google Drive path for results")
-    parser.add_argument("--shci-executable", default="./shci_program", 
-                       help="Path to SHCI executable on instance")
+    parser.add_argument("--compute-executable", default="./compute_program", 
+                       help="Path to computational executable on instance")
     parser.add_argument("--exclude", nargs="+", 
                        help="Additional file patterns to exclude from upload")
     
@@ -410,7 +410,7 @@ def main():
     parser.add_argument("--docker", action="store_true",
                        help="Use Docker containerized deployment")
     parser.add_argument("--docker-image", 
-                       help="Docker image to use (default: from config or ghcr.io/cloud-scheduler/quantum-chemistry:latest)")
+                       help="Docker image to use (default: from config or ghcr.io/cloud-scheduler/computational:latest)")
     
     # Configuration
     parser.add_argument("--config", default="config.json", help="Configuration file")
@@ -508,8 +508,8 @@ def main():
     
     # Create job configuration
     job_config = {
-        'basis_set': args.basis,
-        'shci_executable': args.shci_executable,
+        'job_config': args.basis,
+        'compute_executable': args.compute_executable,
         'exclude_patterns': args.exclude or [],
         'use_docker': args.docker,
         'budget_limit': args.budget,
@@ -522,7 +522,7 @@ def main():
         job_config['docker_image'] = args.docker_image
     elif args.docker:
         # Use default Docker image
-        job_config['docker_image'] = 'ghcr.io/cloud-scheduler/quantum-chemistry:latest'
+        job_config['docker_image'] = 'ghcr.io/cloud-scheduler/computational:latest'
     
     if args.gdrive_path:
         job_config['gdrive_path'] = args.gdrive_path
@@ -551,7 +551,7 @@ def main():
     elif result.get('status') == 'launched' or result.get('status') != 'failed':
         logger.info(f"\nJob {manager.job_id} launched successfully!")
         logger.info(f"Input files: s3://{args.s3_bucket}/{manager.job_id}/input/")
-        logger.info(f"Results will sync to: gdrive:{job_config.get('gdrive_path', f'shci_jobs/{manager.job_id}')}")
+        logger.info(f"Results will sync to: gdrive:{job_config.get('gdrive_path', f'compute_jobs/{manager.job_id}')}")
         logger.info(f"\nMonitor progress in Google Drive (syncs every 5 minutes)")
     else:
         logger.error(f"Failed to launch job: {result.get('error', 'Unknown error')}")

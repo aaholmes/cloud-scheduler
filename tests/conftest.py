@@ -46,7 +46,7 @@ def sample_config():
         },
         "docker": {
             "enabled": True,
-            "image": "test/quantum-chemistry:latest"
+            "image": "test/computational:latest"
         }
     }
 
@@ -111,13 +111,13 @@ def job_input_dir(temp_dir):
     
     # Create sample input files
     with open(os.path.join(job_dir, "input.inp"), 'w') as f:
-        f.write("# Sample SHCI input file\nbasis_set = aug-cc-pVDZ\n")
+        f.write("# Sample computational input file\njob_type = computational\n")
     
     with open(os.path.join(job_dir, "run_calculation.py"), 'w') as f:
         f.write("#!/usr/bin/env python3\nprint('Running test calculation')\n")
     
-    with open(os.path.join(job_dir, "FCIDUMP"), 'w') as f:
-        f.write("# Large FCIDUMP file - should be excluded from sync\n" + "x" * 1000)
+    with open(os.path.join(job_dir, "large_file.dat"), 'w') as f:
+        f.write("# Large data file - should be excluded from sync\n" + "x" * 1000)
     
     return job_dir
 

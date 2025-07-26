@@ -1,6 +1,6 @@
 # Cost Tracking and Budgeting
 
-The cloud scheduler now includes comprehensive cost tracking and budgeting capabilities that integrate with cloud provider billing APIs to provide actual cost data and budget controls.
+The cloud scheduler now includes comprehensive cost tracking and budgeting capabilities that integrate with cloud provider billing APIs to provide actual cost data and budget controls for computational workloads.
 
 ## Overview
 

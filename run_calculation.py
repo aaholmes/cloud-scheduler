@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-Run quantum chemistry calculations using PySCF and SHCI.
-This script generates integrals for a water dimer and runs SHCI calculations.
+Run computational calculations.
+This script serves as an example for computational workloads - modify for your specific needs.
+Originally designed for quantum chemistry calculations using PySCF and SHCI.
 """
 import argparse
 import os
@@ -209,10 +210,10 @@ def save_results_summary(output_dir, mol, mf, basis, calculation_time):
 
 def main():
     """Main function to run the calculation."""
-    parser = argparse.ArgumentParser(description="Run SHCI calculation on water dimer")
+    parser = argparse.ArgumentParser(description="Run computational calculation (example: quantum chemistry)")
     parser.add_argument("--basis", default="aug-cc-pVDZ", 
                        help="Basis set (default: aug-cc-pVDZ)")
-    parser.add_argument("--output_dir", default="shci_output",
+    parser.add_argument("--output_dir", default="compute_output",
                        help="Directory for output files")
     parser.add_argument("--frozen_core", action="store_true", default=True,
                        help="Freeze core orbitals")
@@ -225,7 +226,7 @@ def main():
     os.makedirs(args.output_dir, exist_ok=True)
     
     logger.info("="*60)
-    logger.info("Starting Water Dimer SHCI Calculation")
+    logger.info("Starting Computational Calculation")
     logger.info("="*60)
     logger.info(f"Basis set: {args.basis}")
     logger.info(f"Output directory: {args.output_dir}")

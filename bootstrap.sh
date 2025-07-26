@@ -7,9 +7,9 @@ set -x  # Print commands for debugging
 # --- Configuration ---
 # These can be overridden by environment variables
 RCLONE_CONFIG_SECRET_NAME="${RCLONE_CONFIG_SECRET_NAME:-rclone_config_secret}"
-SHCI_REPO_URL="${SHCI_REPO_URL:-https://github.com/your_username/your_shci_repo.git}"
+COMPUTE_REPO_URL="${COMPUTE_REPO_URL:-https://github.com/your_username/your_compute_repo.git}"
 GDRIVE_REMOTE="${GDRIVE_REMOTE:-gdrive}"
-GDRIVE_DEST_DIR="${GDRIVE_DEST_DIR:-shci_project/results_$(date +%Y-%m-%d_%H-%M-%S)}"
+GDRIVE_DEST_DIR="${GDRIVE_DEST_DIR:-compute_project/results_$(date +%Y-%m-%d_%H-%M-%S)}"
 
 # Detect cloud provider
 if [ -f /sys/hypervisor/uuid ] && grep -q ^ec2 /sys/hypervisor/uuid; then
@@ -121,15 +121,15 @@ done
 echo "Setting up computation code..."
 cd $HOME_DIR
 
-# Clone the SHCI repository if provided
-if [ "$SHCI_REPO_URL" != "https://github.com/your_username/your_shci_repo.git" ]; then
-    echo "Cloning SHCI repository..."
-    git clone $SHCI_REPO_URL shci_code
-    cd shci_code
+# Clone the computational software repository if provided
+if [ "$COMPUTE_REPO_URL" != "https://github.com/your_username/your_compute_repo.git" ]; then
+    echo "Cloning computational software repository..."
+    git clone $COMPUTE_REPO_URL compute_code
+    cd compute_code
     
     # Build if Makefile exists
     if [ -f Makefile ]; then
-        echo "Building SHCI code..."
+        echo "Building computational software..."
         make -j$(nproc)
     fi
     cd $HOME_DIR
@@ -143,7 +143,7 @@ elif [ -f /tmp/run_calculation.py ]; then
 fi
 
 # --- Prepare Output Directory ---
-OUTPUT_DIR="$HOME_DIR/shci_output"
+OUTPUT_DIR="$HOME_DIR/compute_output"
 mkdir -p $OUTPUT_DIR
 sudo chown -R $(basename $HOME_DIR):$(basename $HOME_DIR) $OUTPUT_DIR
 
@@ -160,8 +160,8 @@ rclone sync "$OUTPUT_DIR" "${GDRIVE_REMOTE}:${GDRIVE_DEST_DIR}" \
     --progress \
     --log-file="$OUTPUT_DIR/rclone.log" \
     --log-level INFO \
-    --exclude "FCIDUMP" \
-    --exclude "*.tmp"
+    --exclude "*.tmp" \
+    --exclude "*.large"
 
 if [ $? -eq 0 ]; then
     echo "[$(date)] Sync completed successfully"

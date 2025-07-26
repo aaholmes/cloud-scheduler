@@ -1,6 +1,6 @@
 # Cloud Scheduler
 
-Automated system for finding the cheapest cloud spot instances across AWS, GCP, and Azure, launching quantum chemistry calculations, and syncing results to Google Drive. Now includes comprehensive **cost tracking and budgeting** capabilities.
+Automated system for finding the cheapest cloud spot instances across AWS, GCP, and Azure, launching computational workloads, and syncing results to Google Drive. Now includes comprehensive **cost tracking and budgeting** capabilities.
 
 ## Overview
 
@@ -10,8 +10,8 @@ This project provides a complete workflow for:
 3. **Budget Validation** - Prevents job launches that exceed cost limits
 4. **File Staging** - Uploads job files to S3 for reliable transfer to instances
 5. **Automated Deployment** - Launches instances with pre-configured bootstrap scripts
-6. **Calculation Execution** - Runs quantum chemistry calculations (SHCI/PySCF)
-7. **Result Syncing** - Automatically syncs results to Google Drive (excluding large FCIDUMP files)
+6. **Computation Execution** - Runs computational workloads with customizable scripts
+7. **Result Syncing** - Automatically syncs results to Google Drive with configurable exclusions
 8. **Cost Tracking** - Retrieves actual costs from cloud provider billing APIs
 9. **Cost Analysis** - Comprehensive reporting on spending patterns and budget performance
 
@@ -27,9 +27,9 @@ This project provides a complete workflow for:
 - Automated instance provisioning
 - Configurable hardware requirements (vCPU, RAM)
 - Periodic result backup to Google Drive
-- FCIDUMP exclusion from syncs to save bandwidth/storage
+- Configurable file exclusions from syncs to save bandwidth/storage
 - Self-terminating instances to minimize costs
-- Support for custom SHCI repositories
+- Support for custom software repositories and environments
 - Robust error handling and logging
 
 ## Quick Start
@@ -42,7 +42,7 @@ pip install -r requirements.txt
 2. Configure cloud credentials and S3:
 ```bash
 aws configure
-aws s3 mb s3://my-shci-jobs  # Create S3 bucket
+aws s3 mb s3://my-compute-jobs  # Create S3 bucket
 gcloud auth login
 az login
 ```
@@ -69,10 +69,10 @@ python find_cheapest_instance.py --no-interactive
 4. Submit a job:
 ```bash
 # Traditional deployment
-python cloud_run.py ./my_job_files --s3-bucket my-shci-jobs --from-spot-prices
+python cloud_run.py ./my_job_files --s3-bucket my-compute-jobs --from-spot-prices
 
 # Docker deployment (recommended)
-python cloud_run.py ./my_job_files --s3-bucket my-shci-jobs --from-spot-prices --docker
+python cloud_run.py ./my_job_files --s3-bucket my-compute-jobs --from-spot-prices --docker
 ```
 
 ## Project Structure
@@ -87,7 +87,7 @@ cloud-scheduler/
 ├── cloud_cost_report.py       # Cost reporting and analysis tools
 ├── update_job_completion.py   # Job completion and cost tracking workflow
 ├── bootstrap.sh               # Instance initialization script
-├── run_calculation.py         # Quantum chemistry calculation runner
+├── run_calculation.py         # Example computational calculation runner
 ├── requirements.txt           # Python dependencies
 ├── config.example.json        # Example configuration file
 ├── config_profiles/           # Pre-configured calculation profiles
@@ -218,15 +218,15 @@ Create a `config.json` file based on `config.example.json`:
 
 Results are automatically synced to Google Drive:
 ```
-gdrive:shci_project/results_YYYY-MM-DD_HH-MM-SS/
+gdrive:compute_project/results_YYYY-MM-DD_HH-MM-SS/
 ├── calculation.log
-├── calculation_summary.json
+├── results_summary.json
 ├── results.txt
-├── shci.out
-└── (FCIDUMP excluded from sync)
+├── output.out
+└── (large files excluded from sync)
 ```
 
-Note: FCIDUMP files are automatically excluded from Google Drive syncs to save bandwidth and storage space. They remain available on the S3 bucket if needed.
+Note: Large computational files are automatically excluded from Google Drive syncs to save bandwidth and storage space. They remain available on the S3 bucket if needed.
 
 ## Monitoring
 

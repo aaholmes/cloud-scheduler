@@ -68,7 +68,7 @@ class TestBudgetValidation:
     def test_budget_validation_within_budget(self, job_manager, mock_spot_prices):
         """Test budget validation when estimated cost is within budget."""
         job_config = {
-            'basis_set': 'aug-cc-pVDZ',
+            'job_type': 'computational',
             'budget_limit': 10.0,
             'estimated_runtime': 2.0,
             'price_per_hour': 0.5  # Will be set from spot prices
@@ -111,7 +111,7 @@ class TestBudgetValidation:
     def test_budget_validation_over_budget(self, job_manager):
         """Test budget validation when estimated cost exceeds budget."""
         job_config = {
-            'basis_set': 'aug-cc-pVDZ',
+            'job_type': 'computational',
             'budget_limit': 5.0,     # Low budget
             'estimated_runtime': 20.0,  # Long runtime
             'price_per_hour': 1.0       # High price per hour
@@ -130,7 +130,7 @@ class TestBudgetValidation:
     def test_budget_validation_no_budget(self, job_manager, mock_spot_prices):
         """Test that jobs without budget limits proceed normally."""
         job_config = {
-            'basis_set': 'aug-cc-pVDZ',
+            'job_type': 'computational',
             'estimated_runtime': 2.0,
             'price_per_hour': 0.5
             # No budget_limit set
@@ -223,7 +223,7 @@ class TestBudgetValidation:
     def test_budget_with_dry_run(self, job_manager):
         """Test budget validation in dry run mode."""
         job_config = {
-            'basis_set': 'aug-cc-pVDZ',
+            'job_type': 'computational',
             'budget_limit': 10.0,
             'estimated_runtime': 2.0,
             'price_per_hour': 3.0  # Would cost 6.0, under budget
@@ -245,7 +245,7 @@ class TestBudgetValidation:
     def test_job_config_with_budget_fields(self, job_manager, mock_spot_prices):
         """Test that job configuration includes budget-related fields."""
         job_config = {
-            'basis_set': 'aug-cc-pVDZ',
+            'job_type': 'computational',
             'budget_limit': 15.0,
             'estimated_runtime': 3.0,
             'price_per_hour': 0.8
