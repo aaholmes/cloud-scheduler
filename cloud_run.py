@@ -13,6 +13,7 @@ import time
 import uuid
 from pathlib import Path
 from typing import Dict, Any, List
+from job_manager import get_job_manager
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -125,6 +126,31 @@ class CloudJobManager:
             f.write(bootstrap_content)
         os.chmod(bootstrap_path, 0o755)
         
+        # Initialize job manager and create job record
+        jm = get_job_manager()
+        
+        # Create initial job record
+        initial_job_config = {
+            's3_bucket': self.s3_bucket,  
+            's3_input_path': s3_path,
+            'gdrive_path': metadata['gdrive_path'],
+            'basis_set': metadata['basis_set'],
+            'price_per_hour': 0.0  # Will be updated after launch
+        }
+        
+        initial_launch_result = {
+            'status': 'launching',
+            'provider': provider,
+            'instance_type': instance_type,
+            'region': region,
+            'job_id': self.job_id
+        }
+        
+        # Create job record
+        if not jm.create_job(self.job_id, initial_job_config, initial_launch_result):
+            logger.error("Failed to create job record in database")
+            return {'status': 'failed', 'error': 'Database error'}
+        
         # Launch instance using existing launch_job.py
         launch_cmd = [
             sys.executable, 'launch_job.py',
@@ -160,15 +186,32 @@ class CloudJobManager:
                 launch_result['s3_path'] = s3_path
                 launch_result['gdrive_path'] = metadata['gdrive_path']
                 
+                # Update job record with launch details
+                job_update_data = {
+                    'instance_id': launch_result.get('instance_id'),
+                    'public_ip': launch_result.get('public_ip'),
+                    'private_ip': launch_result.get('private_ip')
+                }
+                
+                jm.update_job_status(self.job_id, 'launched', job_update_data)
+                
                 # Save enhanced result
                 result_path = f"job_{self.job_id}_launch.json"
                 with open(result_path, 'w') as f:
                     json.dump(launch_result, f, indent=2)
                 
                 logger.info(f"Job launch details saved to {result_path}")
+                logger.info(f"Job {self.job_id} recorded in database")
+                
                 return launch_result
             else:
                 logger.error(f"Failed to launch instance: {result.stderr}")
+                
+                # Update job status to failed
+                jm.update_job_status(self.job_id, 'failed', {
+                    'error_message': result.stderr
+                })
+                
                 return {'status': 'failed', 'error': result.stderr}
         
         finally:
