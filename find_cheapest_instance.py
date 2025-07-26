@@ -9,6 +9,8 @@ import logging
 import argparse
 import re
 import sys
+import time
+from functools import wraps
 from typing import List, Dict, Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from google.oauth2 import service_account
@@ -24,11 +26,68 @@ DEFAULT_MAX_VCPU = 32
 DEFAULT_MIN_RAM_GB = 64
 DEFAULT_MAX_RAM_GB = 256
 
+# Rate limiting decorator
+def rate_limit(calls_per_second=5, burst_limit=10):
+    """Rate limiting decorator with exponential backoff."""
+    min_interval = 1.0 / calls_per_second
+    last_called = [0.0]
+    burst_count = [0]
+    
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            now = time.time()
+            elapsed = now - last_called[0]
+            
+            # Reset burst counter after 60 seconds
+            if elapsed > 60:
+                burst_count[0] = 0
+            
+            # Check burst limit
+            if burst_count[0] >= burst_limit:
+                sleep_time = 60 - (elapsed % 60)  # Wait until next minute
+                logger.info(f"Rate limit burst exceeded, sleeping for {sleep_time:.1f}s")
+                time.sleep(sleep_time)
+                burst_count[0] = 0
+            
+            # Check rate limit
+            left_to_wait = min_interval - elapsed
+            if left_to_wait > 0:
+                time.sleep(left_to_wait)
+            
+            # Execute with exponential backoff on errors
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    result = func(*args, **kwargs)
+                    last_called[0] = time.time()
+                    burst_count[0] += 1
+                    return result
+                except Exception as e:
+                    if attempt == max_retries - 1:
+                        raise
+                    sleep_time = (2 ** attempt) + (time.time() % 1)  # Exponential backoff with jitter
+                    logger.warning(f"API call failed (attempt {attempt + 1}/{max_retries}), retrying in {sleep_time:.1f}s: {e}")
+                    time.sleep(sleep_time)
+            
+        return wrapper
+    return decorator
+
+@rate_limit(calls_per_second=10, burst_limit=50)
 def get_aws_instance_types(min_vcpu: int = 1, max_vcpu: int = 128, 
                           min_ram_gb: int = 1, max_ram_gb: int = 1024) -> Dict[str, tuple]:
     """Query AWS EC2 API for available instance types matching requirements."""
     try:
+        # Validate credentials first
         ec2 = boto3.client('ec2', region_name='us-east-1')
+        
+        # Test credentials with a simple call
+        try:
+            ec2.describe_regions(MaxResults=1)
+        except Exception as e:
+            if 'UnauthorizedOperation' in str(e) or 'InvalidUserID.NotFound' in str(e):
+                raise Exception(f"AWS credentials not valid or insufficient permissions: {e}")
+            raise
         
         paginator = ec2.get_paginator('describe_instance_types')
         instance_types = {}
@@ -56,6 +115,7 @@ def get_aws_instance_types(min_vcpu: int = 1, max_vcpu: int = 128,
             'm5.4xlarge': (16, 64), 'm5.8xlarge': (32, 128)
         }
 
+@rate_limit(calls_per_second=10, burst_limit=30)
 def get_gcp_instance_types(min_vcpu: int = 1, max_vcpu: int = 128,
                           min_ram_gb: int = 1, max_ram_gb: int = 1024) -> Dict[str, tuple]:
     """Query GCP Compute Engine API for available machine types matching requirements."""
@@ -64,15 +124,23 @@ def get_gcp_instance_types(min_vcpu: int = 1, max_vcpu: int = 128,
         from google.oauth2 import service_account
         import google.auth
         
-        # Try to get credentials
+        # Try to get credentials and validate
         try:
             credentials, project = google.auth.default()
-        except Exception:
-            # If no credentials available, use fallback
-            raise Exception("No GCP credentials available")
             
-        compute = discovery.build('compute', 'v1', credentials=credentials)
-        
+            # Test credentials with a simple API call
+            compute = discovery.build('compute', 'v1', credentials=credentials)
+            zones_request = compute.zones().list(project=project, maxResults=1)
+            zones_request.execute()
+            
+        except Exception as e:
+            if 'could not find default credentials' in str(e).lower():
+                raise Exception("No GCP credentials available. Run 'gcloud auth application-default login'")
+            elif 'permission denied' in str(e).lower():
+                raise Exception(f"GCP credentials lack sufficient permissions: {e}")
+            else:
+                raise Exception(f"GCP credential validation failed: {e}")
+            
         # Get machine types from a representative zone (us-central1-a)
         request = compute.machineTypes().list(project=project, zone='us-central1-a')
         response = request.execute()
@@ -104,15 +172,71 @@ def get_azure_instance_types(min_vcpu: int = 1, max_vcpu: int = 128,
                             min_ram_gb: int = 1, max_ram_gb: int = 1024) -> Dict[str, tuple]:
     """Query Azure Compute SKUs API for available VM sizes matching requirements."""
     try:
-        # Use Azure REST API directly since it's simpler than installing Azure SDK
-        api_url = "https://management.azure.com/subscriptions/{subscription_id}/providers/Microsoft.Compute/skus"
+        # Use proper Azure SDK with authentication
+        from azure.identity import DefaultAzureCredential
+        from azure.mgmt.compute import ComputeManagementClient
+        from azure.mgmt.resource import SubscriptionClient
         
-        # For now, we'll use the retail prices API which has VM size info
-        # This is a simplified approach - in production you'd use proper Azure SDK
+        # Get credentials and validate
+        credential = DefaultAzureCredential()
+        
+        # Test credential by getting subscriptions
+        subscription_client = SubscriptionClient(credential)
+        subscriptions = list(subscription_client.subscriptions.list())
+        
+        if not subscriptions:
+            raise Exception("No Azure subscriptions accessible with current credentials")
+        
+        # Use first available subscription
+        subscription_id = subscriptions[0].subscription_id
+        logger.info(f"Using Azure subscription: {subscription_id}")
+        
+        # Get compute client
+        compute_client = ComputeManagementClient(credential, subscription_id)
+        
+        # Get VM sizes from compute SKUs API
+        skus = compute_client.resource_skus.list(filter="resourceType eq 'virtualMachines'")
+        instance_types = {}
+        
+        for sku in skus:
+            if sku.resource_type == "virtualMachines" and not sku.restrictions:
+                vcpu = None
+                memory_gb = None
+                
+                # Parse capabilities to get vCPU and memory
+                for capability in sku.capabilities or []:
+                    if capability.name == "vCPUs":
+                        vcpu = int(capability.value)
+                    elif capability.name == "MemoryGB":
+                        memory_gb = float(capability.value)
+                
+                # Filter based on requirements
+                if (vcpu and memory_gb and 
+                    min_vcpu <= vcpu <= max_vcpu and 
+                    min_ram_gb <= memory_gb <= max_ram_gb):
+                    instance_types[sku.name] = (vcpu, int(memory_gb))
+        
+        logger.info(f"Found {len(instance_types)} Azure VM sizes matching requirements")
+        return instance_types
+        
+    except ImportError:
+        logger.warning("Azure SDK not installed. Install with: pip install azure-identity azure-mgmt-compute azure-mgmt-resource")
+        # Fallback to retail API approach
+        return get_azure_instance_types_fallback(min_vcpu, max_vcpu, min_ram_gb, max_ram_gb)
+    except Exception as e:
+        logger.warning(f"Failed to query Azure VM sizes with SDK: {e}")
+        # Fallback to retail API approach
+        return get_azure_instance_types_fallback(min_vcpu, max_vcpu, min_ram_gb, max_ram_gb)
+
+
+def get_azure_instance_types_fallback(min_vcpu: int = 1, max_vcpu: int = 128,
+                                     min_ram_gb: int = 1, max_ram_gb: int = 1024) -> Dict[str, tuple]:
+    """Fallback method using retail prices API (less reliable but no auth required)."""
+    try:
         retail_api = "https://prices.azure.com/api/retail/prices"
         query = "$filter=serviceName eq 'Virtual Machines' and priceType eq 'Consumption'"
         
-        response = requests.get(f"{retail_api}?{query}")
+        response = requests.get(f"{retail_api}?{query}", timeout=30)
         if response.status_code != 200:
             raise Exception(f"Failed to query Azure API: {response.status_code}")
         
@@ -150,12 +274,12 @@ def get_azure_instance_types(min_vcpu: int = 1, max_vcpu: int = 128,
                                 min_ram_gb <= memory_gb <= max_ram_gb):
                                 instance_types[sku_name] = (vcpu, memory_gb)
         
-        logger.info(f"Found {len(instance_types)} Azure VM sizes matching requirements")
+        logger.info(f"Found {len(instance_types)} Azure VM sizes matching requirements (fallback)")
         return instance_types
         
     except Exception as e:
-        logger.warning(f"Failed to query Azure VM sizes dynamically: {e}")
-        # Fallback to a basic set if API fails
+        logger.warning(f"Failed to query Azure VM sizes with fallback method: {e}")
+        # Final fallback to hardcoded basic set
         return {
             'Standard_E16s_v5': (16, 128), 'Standard_E32s_v5': (32, 256),
             'Standard_D16s_v5': (16, 64), 'Standard_D32s_v5': (32, 128)
@@ -205,6 +329,7 @@ def get_aws_spot_prices(hw_config: Dict[str, int]) -> List[Dict[str, Any]]:
     return instances
 
 
+@rate_limit(calls_per_second=5, burst_limit=10)
 def query_aws_region_spot_prices(region: str, aws_instance_specs: Dict[str, tuple]) -> List[Dict[str, Any]]:
     """Query spot prices for a specific AWS region."""
     instances = []
