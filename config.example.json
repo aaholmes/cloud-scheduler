@@ -1,0 +1,21 @@
+{
+  "aws": {
+    "key_name": "my-ec2-keypair",
+    "security_group": "cloud-scheduler-sg",
+    "iam_role": "cloud-scheduler-role",
+    "max_price": 5.0,
+    "disk_size_gb": 100
+  },
+  "gcp": {
+    "project_id": "my-gcp-project",
+    "service_account_email": "cloud-scheduler@my-gcp-project.iam.gserviceaccount.com",
+    "disk_size_gb": 100
+  },
+  "azure": {
+    "subscription_id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+    "resource_group": "cloud-scheduler-rg",
+    "admin_password": "ChangeMe123!@#",
+    "key_vault_name": "cloud-scheduler-vault",
+    "disk_size_gb": 100
+  }
+}
