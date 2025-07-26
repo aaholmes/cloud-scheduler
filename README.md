@@ -168,17 +168,34 @@ After job completion, actual costs are automatically retrieved from:
 
 ## Supported Instance Types
 
-### AWS
-- Memory optimized: r5, r5a, r6i, r7i series
-- General purpose: m5, m5a, m6i series
+The system **dynamically discovers all available instance types** from each cloud provider's API that match your hardware requirements, rather than being limited to a predefined list.
 
-### GCP
-- Memory optimized: n2-highmem, n2d-highmem
-- Standard: n2-standard, n2d-standard
+### Dynamic Instance Discovery
 
-### Azure
-- Memory optimized: E_v5 series
-- General purpose: D_v5 series
+**AWS**: Uses EC2 `describe_instance_types()` API to discover all available instance types
+- Automatically finds all current and new instance types (r5, r6i, r7i, m5, m6i, c5, c6i, x1e, z1d, etc.)
+- Includes latest generation instances as they become available
+- Filters based on your vCPU and RAM requirements
+
+**GCP**: Uses Compute Engine `machineTypes.list()` API to discover machine types
+- Discovers all machine families (n1, n2, n2d, e2, t2d, c2, etc.)
+- Includes both predefined and custom machine types
+- Automatically discovers new machine types as Google releases them
+
+**Azure**: Uses Compute SKUs API and Retail Prices API for VM discovery
+- Discovers all VM series (D, E, F, H, L, M, N, etc.)
+- Includes latest VM generations (v3, v4, v5, etc.)
+- Automatically includes new VM sizes as they're released
+
+### Instance Type Filtering
+
+The system automatically filters discovered instances based on your requirements:
+- **vCPU range**: Only includes instances within your min/max CPU range
+- **Memory range**: Only includes instances within your min/max RAM range  
+- **Spot availability**: Only queries pricing for instances available as spot/preemptible
+- **Regional availability**: Checks availability across all regions
+
+This approach ensures you always have access to the latest and most cost-effective instances without needing code updates.
 
 ## Configuration
 

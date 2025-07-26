@@ -7,9 +7,10 @@ import requests
 import json
 import logging
 import argparse
+import re
+import sys
 from typing import List, Dict, Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from google.cloud import billing_v1
 from google.oauth2 import service_account
 import os
 
@@ -23,57 +24,158 @@ DEFAULT_MAX_VCPU = 32
 DEFAULT_MIN_RAM_GB = 64
 DEFAULT_MAX_RAM_GB = 256
 
-# Instance type specifications (vCPU, RAM in GB)
-AWS_INSTANCE_SPECS = {
-    # Memory optimized instances
-    'r5.4xlarge': (16, 128),
-    'r5.8xlarge': (32, 256),
-    'r5a.4xlarge': (16, 128),
-    'r5a.8xlarge': (32, 256),
-    'r6i.4xlarge': (16, 128),
-    'r6i.8xlarge': (32, 256),
-    'r7i.4xlarge': (16, 128),
-    'r7i.8xlarge': (32, 256),
-    # Compute optimized with sufficient memory
-    'm5.4xlarge': (16, 64),
-    'm5.8xlarge': (32, 128),
-    'm5a.4xlarge': (16, 64),
-    'm5a.8xlarge': (32, 128),
-    'm6i.4xlarge': (16, 64),
-    'm6i.8xlarge': (32, 128),
-}
+def get_aws_instance_types(min_vcpu: int = 1, max_vcpu: int = 128, 
+                          min_ram_gb: int = 1, max_ram_gb: int = 1024) -> Dict[str, tuple]:
+    """Query AWS EC2 API for available instance types matching requirements."""
+    try:
+        ec2 = boto3.client('ec2', region_name='us-east-1')
+        
+        paginator = ec2.get_paginator('describe_instance_types')
+        instance_types = {}
+        
+        for page in paginator.paginate():
+            for instance_type in page['InstanceTypes']:
+                name = instance_type['InstanceType']
+                vcpu = instance_type['VCpuInfo']['DefaultVCpus']
+                memory_mb = instance_type['MemoryInfo']['SizeInMiB']
+                memory_gb = memory_mb // 1024
+                
+                # Filter based on requirements
+                if (min_vcpu <= vcpu <= max_vcpu and 
+                    min_ram_gb <= memory_gb <= max_ram_gb):
+                    instance_types[name] = (vcpu, memory_gb)
+        
+        logger.info(f"Found {len(instance_types)} AWS instance types matching requirements")
+        return instance_types
+        
+    except Exception as e:
+        logger.warning(f"Failed to query AWS instance types dynamically: {e}")
+        # Fallback to a basic set if API fails
+        return {
+            'r5.4xlarge': (16, 128), 'r5.8xlarge': (32, 256),
+            'm5.4xlarge': (16, 64), 'm5.8xlarge': (32, 128)
+        }
 
-GCP_INSTANCE_SPECS = {
-    # Memory-optimized
-    'n2-highmem-16': (16, 128),
-    'n2-highmem-32': (32, 256),
-    'n2d-highmem-16': (16, 128),
-    'n2d-highmem-32': (32, 256),
-    # Standard with good memory
-    'n2-standard-16': (16, 64),
-    'n2-standard-32': (32, 128),
-    'n2d-standard-16': (16, 64),
-    'n2d-standard-32': (32, 128),
-}
+def get_gcp_instance_types(min_vcpu: int = 1, max_vcpu: int = 128,
+                          min_ram_gb: int = 1, max_ram_gb: int = 1024) -> Dict[str, tuple]:
+    """Query GCP Compute Engine API for available machine types matching requirements."""
+    try:
+        from googleapiclient import discovery
+        from google.oauth2 import service_account
+        import google.auth
+        
+        # Try to get credentials
+        try:
+            credentials, project = google.auth.default()
+        except Exception:
+            # If no credentials available, use fallback
+            raise Exception("No GCP credentials available")
+            
+        compute = discovery.build('compute', 'v1', credentials=credentials)
+        
+        # Get machine types from a representative zone (us-central1-a)
+        request = compute.machineTypes().list(project=project, zone='us-central1-a')
+        response = request.execute()
+        
+        instance_types = {}
+        for machine_type in response.get('items', []):
+            name = machine_type['name']
+            vcpu = machine_type['guestCpus']
+            memory_mb = machine_type['memoryMb']
+            memory_gb = memory_mb // 1024
+            
+            # Filter based on requirements  
+            if (min_vcpu <= vcpu <= max_vcpu and 
+                min_ram_gb <= memory_gb <= max_ram_gb):
+                instance_types[name] = (vcpu, memory_gb)
+        
+        logger.info(f"Found {len(instance_types)} GCP machine types matching requirements")
+        return instance_types
+        
+    except Exception as e:
+        logger.warning(f"Failed to query GCP machine types dynamically: {e}")
+        # Fallback to a basic set if API fails
+        return {
+            'n2-highmem-16': (16, 128), 'n2-highmem-32': (32, 256),
+            'n2-standard-16': (16, 64), 'n2-standard-32': (32, 128)
+        }
 
-AZURE_INSTANCE_SPECS = {
-    # Memory optimized
-    'Standard_E16s_v5': (16, 128),
-    'Standard_E32s_v5': (32, 256),
-    'Standard_E16as_v5': (16, 128),
-    'Standard_E32as_v5': (32, 256),
-    # General purpose
-    'Standard_D16s_v5': (16, 64),
-    'Standard_D32s_v5': (32, 128),
-    'Standard_D16as_v5': (16, 64),
-    'Standard_D32as_v5': (32, 128),
-}
+def get_azure_instance_types(min_vcpu: int = 1, max_vcpu: int = 128,
+                            min_ram_gb: int = 1, max_ram_gb: int = 1024) -> Dict[str, tuple]:
+    """Query Azure Compute SKUs API for available VM sizes matching requirements."""
+    try:
+        # Use Azure REST API directly since it's simpler than installing Azure SDK
+        api_url = "https://management.azure.com/subscriptions/{subscription_id}/providers/Microsoft.Compute/skus"
+        
+        # For now, we'll use the retail prices API which has VM size info
+        # This is a simplified approach - in production you'd use proper Azure SDK
+        retail_api = "https://prices.azure.com/api/retail/prices"
+        query = "$filter=serviceName eq 'Virtual Machines' and priceType eq 'Consumption'"
+        
+        response = requests.get(f"{retail_api}?{query}")
+        if response.status_code != 200:
+            raise Exception(f"Failed to query Azure API: {response.status_code}")
+        
+        data = response.json()
+        instance_types = {}
+        
+        for item in data.get('Items', []):
+            if 'armSkuName' in item and item.get('type') == 'Consumption':
+                sku_name = item['armSkuName']
+                
+                # Parse vCPUs and memory from the SKU attributes or product name
+                # This is a heuristic approach since the API doesn't always provide structured specs
+                if '_' in sku_name:
+                    parts = sku_name.split('_')
+                    if len(parts) >= 2:
+                        size_part = parts[1]  # e.g., "E16s" from "Standard_E16s_v5"
+                        
+                        # Extract number from size (e.g., "16" from "E16s")
+                        vcpu_match = re.search(r'(\d+)', size_part)
+                        if vcpu_match:
+                            vcpu = int(vcpu_match.group(1))
+                            
+                            # Estimate memory based on Azure VM series patterns
+                            if size_part.startswith('E'):  # Memory optimized
+                                memory_gb = vcpu * 8  # E-series typically has 8GB per vCPU
+                            elif size_part.startswith('D'):  # General purpose
+                                memory_gb = vcpu * 4  # D-series typically has 4GB per vCPU
+                            elif size_part.startswith('F'):  # Compute optimized
+                                memory_gb = vcpu * 2  # F-series typically has 2GB per vCPU
+                            else:
+                                memory_gb = vcpu * 4  # Default assumption
+                            
+                            # Filter based on requirements
+                            if (min_vcpu <= vcpu <= max_vcpu and 
+                                min_ram_gb <= memory_gb <= max_ram_gb):
+                                instance_types[sku_name] = (vcpu, memory_gb)
+        
+        logger.info(f"Found {len(instance_types)} Azure VM sizes matching requirements")
+        return instance_types
+        
+    except Exception as e:
+        logger.warning(f"Failed to query Azure VM sizes dynamically: {e}")
+        # Fallback to a basic set if API fails
+        return {
+            'Standard_E16s_v5': (16, 128), 'Standard_E32s_v5': (32, 256),
+            'Standard_D16s_v5': (16, 64), 'Standard_D32s_v5': (32, 128)
+        }
 
 
-def get_aws_spot_prices() -> List[Dict[str, Any]]:
-    """Query AWS for spot prices of memory-optimized instances."""
+def get_aws_spot_prices(hw_config: Dict[str, int]) -> List[Dict[str, Any]]:
+    """Query AWS for spot prices of instances matching hardware requirements."""
     logger.info("Querying AWS spot prices...")
     instances = []
+    
+    # Get dynamic instance types based on hardware requirements
+    aws_instance_specs = get_aws_instance_types(
+        hw_config['min_vcpu'], hw_config['max_vcpu'],
+        hw_config['min_ram_gb'], hw_config['max_ram_gb']
+    )
+    
+    if not aws_instance_specs:
+        logger.warning("No AWS instance types found matching requirements")
+        return instances
     
     try:
         # Get list of regions
@@ -86,7 +188,7 @@ def get_aws_spot_prices() -> List[Dict[str, Any]]:
             future_to_region = {}
             
             for region in regions:
-                future = executor.submit(query_aws_region_spot_prices, region)
+                future = executor.submit(query_aws_region_spot_prices, region, aws_instance_specs)
                 future_to_region[future] = region
             
             for future in as_completed(future_to_region):
@@ -103,7 +205,7 @@ def get_aws_spot_prices() -> List[Dict[str, Any]]:
     return instances
 
 
-def query_aws_region_spot_prices(region: str) -> List[Dict[str, Any]]:
+def query_aws_region_spot_prices(region: str, aws_instance_specs: Dict[str, tuple]) -> List[Dict[str, Any]]:
     """Query spot prices for a specific AWS region."""
     instances = []
     
@@ -111,36 +213,41 @@ def query_aws_region_spot_prices(region: str) -> List[Dict[str, Any]]:
         client = boto3.client('ec2', region_name=region)
         
         # Get spot prices for our instance types
-        instance_types = list(AWS_INSTANCE_SPECS.keys())
+        instance_types = list(aws_instance_specs.keys())
         
-        response = client.describe_spot_price_history(
-            InstanceTypes=instance_types,
-            ProductDescriptions=['Linux/UNIX'],
-            MaxResults=1000
-        )
-        
-        # Process spot prices
-        seen_types = set()
-        for price_info in response.get('SpotPriceHistory', []):
-            instance_type = price_info['InstanceType']
+        # AWS API has limits, so we need to batch requests if we have many instance types
+        batch_size = 100  # AWS allows up to 100 instance types per request
+        for i in range(0, len(instance_types), batch_size):
+            batch_types = instance_types[i:i + batch_size]
             
-            # Only take the most recent price for each instance type
-            if instance_type in seen_types:
-                continue
-            seen_types.add(instance_type)
+            response = client.describe_spot_price_history(
+                InstanceTypes=batch_types,
+                ProductDescriptions=['Linux/UNIX'],
+                MaxResults=1000
+            )
             
-            if instance_type in AWS_INSTANCE_SPECS:
-                vcpu, ram_gb = AWS_INSTANCE_SPECS[instance_type]
+            # Process spot prices
+            seen_types = set()
+            for price_info in response.get('SpotPriceHistory', []):
+                instance_type = price_info['InstanceType']
                 
-                instances.append({
-                    'provider': 'AWS',
-                    'instance': instance_type,
-                    'region': region,
-                    'price_hr': float(price_info['SpotPrice']),
-                    'vcpu': vcpu,
-                    'ram_gb': ram_gb,
-                    'availability_zone': price_info['AvailabilityZone']
-                })
+                # Only take the most recent price for each instance type
+                if instance_type in seen_types:
+                    continue
+                seen_types.add(instance_type)
+                
+                if instance_type in aws_instance_specs:
+                    vcpu, ram_gb = aws_instance_specs[instance_type]
+                    
+                    instances.append({
+                        'provider': 'AWS',
+                        'instance': instance_type,
+                        'region': region,
+                        'price_hr': float(price_info['SpotPrice']),
+                        'vcpu': vcpu,
+                        'ram_gb': ram_gb,
+                        'availability_zone': price_info['AvailabilityZone']
+                    })
     
     except Exception as e:
         if 'UnauthorizedOperation' not in str(e):
@@ -149,16 +256,22 @@ def query_aws_region_spot_prices(region: str) -> List[Dict[str, Any]]:
     return instances
 
 
-def get_gcp_spot_prices() -> List[Dict[str, Any]]:
-    """Query GCP for spot prices of memory-optimized instances."""
+def get_gcp_spot_prices(hw_config: Dict[str, int]) -> List[Dict[str, Any]]:
+    """Query GCP for spot prices of instances matching hardware requirements."""
     logger.info("Querying GCP spot prices...")
     instances = []
     
+    # Get dynamic instance types based on hardware requirements
+    gcp_instance_specs = get_gcp_instance_types(
+        hw_config['min_vcpu'], hw_config['max_vcpu'],
+        hw_config['min_ram_gb'], hw_config['max_ram_gb']
+    )
+    
+    if not gcp_instance_specs:
+        logger.warning("No GCP machine types found matching requirements")
+        return instances
+    
     try:
-        # This is a simplified implementation
-        # In production, you would use the Cloud Billing Catalog API
-        # For now, we'll use approximate spot pricing (typically 60-91% discount)
-        
         # GCP regions
         regions = [
             'us-central1', 'us-east1', 'us-east4', 'us-west1', 'us-west2',
@@ -166,35 +279,27 @@ def get_gcp_spot_prices() -> List[Dict[str, Any]]:
             'asia-east1', 'asia-northeast1', 'asia-southeast1'
         ]
         
-        # Approximate on-demand prices (USD per hour)
-        # These would be fetched from the Cloud Billing API in production
-        base_prices = {
-            'n2-highmem-16': 0.9768,
-            'n2-highmem-32': 1.9536,
-            'n2d-highmem-16': 0.8544,
-            'n2d-highmem-32': 1.7088,
-            'n2-standard-16': 0.7768,
-            'n2-standard-32': 1.5536,
-            'n2d-standard-16': 0.6792,
-            'n2d-standard-32': 1.3584,
-        }
-        
-        # Spot discount (approximately 60-70% off)
-        spot_discount = 0.35
+        # Generate estimated pricing for dynamic instance types
+        # In production, you would use the Cloud Billing Catalog API
+        # For now, we'll estimate based on vCPU and memory
+        spot_discount = 0.35  # Spot instances are typically 60-70% off
         
         for region in regions:
-            for instance_type, base_price in base_prices.items():
-                if instance_type in GCP_INSTANCE_SPECS:
-                    vcpu, ram_gb = GCP_INSTANCE_SPECS[instance_type]
-                    
-                    instances.append({
-                        'provider': 'GCP',
-                        'instance': instance_type,
-                        'region': region,
-                        'price_hr': base_price * spot_discount,
-                        'vcpu': vcpu,
-                        'ram_gb': ram_gb
-                    })
+            for instance_type, (vcpu, ram_gb) in gcp_instance_specs.items():
+                # Estimate base price based on vCPU and memory
+                # GCP pricing is roughly $0.048/hour per vCore + $0.0065/hour per GB RAM
+                base_vcpu_price = vcpu * 0.048
+                base_memory_price = ram_gb * 0.0065
+                base_price = base_vcpu_price + base_memory_price
+                
+                instances.append({
+                    'provider': 'GCP',
+                    'instance': instance_type,
+                    'region': region,
+                    'price_hr': base_price * spot_discount,
+                    'vcpu': vcpu,
+                    'ram_gb': ram_gb
+                })
     
     except Exception as e:
         logger.error(f"Failed to query GCP prices: {e}")
@@ -202,10 +307,20 @@ def get_gcp_spot_prices() -> List[Dict[str, Any]]:
     return instances
 
 
-def get_azure_spot_prices() -> List[Dict[str, Any]]:
-    """Query Azure for spot prices of memory-optimized instances."""
+def get_azure_spot_prices(hw_config: Dict[str, int]) -> List[Dict[str, Any]]:
+    """Query Azure for spot prices of instances matching hardware requirements."""
     logger.info("Querying Azure spot prices...")
     instances = []
+    
+    # Get dynamic instance types based on hardware requirements
+    azure_instance_specs = get_azure_instance_types(
+        hw_config['min_vcpu'], hw_config['max_vcpu'],
+        hw_config['min_ram_gb'], hw_config['max_ram_gb']
+    )
+    
+    if not azure_instance_specs:
+        logger.warning("No Azure VM sizes found matching requirements")
+        return instances
     
     try:
         # Azure Retail Prices API
@@ -220,7 +335,7 @@ def get_azure_spot_prices() -> List[Dict[str, Any]]:
         
         for region in regions:
             # Query for each instance type
-            for instance_name, (vcpu, ram_gb) in AZURE_INSTANCE_SPECS.items():
+            for instance_name, (vcpu, ram_gb) in azure_instance_specs.items():
                 query = (
                     f"$filter=serviceName eq 'Virtual Machines' "
                     f"and priceType eq 'Spot' "
@@ -459,9 +574,9 @@ def main():
     # Query all providers in parallel
     with ThreadPoolExecutor(max_workers=3) as executor:
         futures = {
-            executor.submit(get_aws_spot_prices): 'AWS',
-            executor.submit(get_gcp_spot_prices): 'GCP',
-            executor.submit(get_azure_spot_prices): 'Azure'
+            executor.submit(get_aws_spot_prices, hw_config): 'AWS',
+            executor.submit(get_gcp_spot_prices, hw_config): 'GCP',
+            executor.submit(get_azure_spot_prices, hw_config): 'Azure'
         }
         
         for future in as_completed(futures):
