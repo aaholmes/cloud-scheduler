@@ -314,6 +314,16 @@ def main():
     parser.add_argument("--exclude", nargs="+", 
                        help="Additional file patterns to exclude from upload")
     
+    # Hardware requirements (passed to find_cheapest_instance.py)
+    parser.add_argument("--min-vcpu", type=int,
+                       help="Minimum vCPUs required")
+    parser.add_argument("--max-vcpu", type=int,
+                       help="Maximum vCPUs to consider")
+    parser.add_argument("--min-ram", type=int,
+                       help="Minimum RAM in GB")
+    parser.add_argument("--max-ram", type=int,
+                       help="Maximum RAM in GB")
+    
     # Configuration
     parser.add_argument("--config", default="config.json", help="Configuration file")
     
@@ -326,6 +336,33 @@ def main():
     
     # Determine instance details
     if args.from_spot_prices or not all([args.provider, args.instance, args.region]):
+        # Check if we need to run find_cheapest_instance.py first
+        if not os.path.exists('spot_prices.json') or hasattr(args, 'hardware_changed'):
+            logger.info("Running instance discovery with current hardware requirements...")
+            
+            # Build find_cheapest_instance.py command
+            find_cmd = [sys.executable, 'find_cheapest_instance.py', '--config', args.config]
+            
+            # Add hardware requirements if specified
+            if args.min_vcpu:
+                find_cmd.extend(['--min-vcpu', str(args.min_vcpu)])
+            if args.max_vcpu:
+                find_cmd.extend(['--max-vcpu', str(args.max_vcpu)])
+            if args.min_ram:
+                find_cmd.extend(['--min-ram', str(args.min_ram)])
+            if args.max_ram:
+                find_cmd.extend(['--max-ram', str(args.max_ram)])
+            
+            # Run in non-interactive mode
+            find_cmd.append('--no-interactive')
+            
+            import subprocess
+            result = subprocess.run(find_cmd, capture_output=True, text=True)
+            
+            if result.returncode != 0:
+                logger.error(f"Failed to find instances: {result.stderr}")
+                sys.exit(1)
+        
         # Load from spot_prices.json
         if not os.path.exists('spot_prices.json'):
             logger.error("spot_prices.json not found. Run find_cheapest_instance.py first.")

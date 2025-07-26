@@ -1,28 +1,28 @@
 {
   "hardware": {
-    "min_vcpu": 16,
-    "max_vcpu": 32,
-    "min_ram_gb": 64,
-    "max_ram_gb": 256
+    "min_vcpu": 4,
+    "max_vcpu": 16,
+    "min_ram_gb": 16,
+    "max_ram_gb": 64
   },
   "aws": {
     "key_name": "my-ec2-keypair",
     "security_group": "cloud-scheduler-sg",
     "iam_role": "cloud-scheduler-role",
-    "max_price": 5.0,
-    "disk_size_gb": 100,
+    "max_price": 2.0,
+    "disk_size_gb": 50,
     "s3_bucket": "my-shci-jobs"
   },
   "gcp": {
     "project_id": "my-gcp-project",
     "service_account_email": "cloud-scheduler@my-gcp-project.iam.gserviceaccount.com",
-    "disk_size_gb": 100
+    "disk_size_gb": 50
   },
   "azure": {
     "subscription_id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
     "resource_group": "cloud-scheduler-rg",
     "admin_password": "ChangeMe123!@#",
     "key_vault_name": "cloud-scheduler-vault",
-    "disk_size_gb": 100
+    "disk_size_gb": 50
   }
 }

@@ -76,19 +76,45 @@ cloud-scheduler/
 ├── run_calculation.py         # Quantum chemistry calculation runner
 ├── requirements.txt           # Python dependencies
 ├── config.example.json        # Example configuration file
+├── config_profiles/           # Pre-configured calculation profiles
 ├── SETUP.md                   # Detailed setup instructions
+├── CONFIGURATION.md           # Configuration guide and profiles
 ├── example_usage.md           # Complete usage walkthrough
 └── README.md                  # This file
 ```
 
 ## Hardware Requirements
 
-Default configuration searches for instances with:
+Configure hardware requirements in `config.json` or via command-line arguments:
+
+**Default requirements:**
 - **vCPUs**: 16-32 cores
 - **RAM**: 64-256 GB
 - **Storage**: 100 GB SSD
 
-These can be modified in `find_cheapest_instance.py`.
+**Configuration methods:**
+1. **Config file** (`config.json`):
+   ```json
+   {
+     "hardware": {
+       "min_vcpu": 16,
+       "max_vcpu": 32,
+       "min_ram_gb": 64,
+       "max_ram_gb": 256
+     }
+   }
+   ```
+
+2. **Command-line arguments**:
+   ```bash
+   python find_cheapest_instance.py --min-vcpu 8 --max-vcpu 16 --min-ram 32 --max-ram 128
+   python cloud_run.py my_job --min-vcpu 32 --max-vcpu 64 --min-ram 256
+   ```
+
+3. **Configuration profiles** (see `config_profiles/` directory):
+   - `small_calculation.json` - 4-16 vCPUs, 16-64GB RAM
+   - `large_calculation.json` - 32-128 vCPUs, 256-1024GB RAM  
+   - `memory_intensive.json` - 16-64 vCPUs, 128-512GB RAM
 
 ## Supported Instance Types
 

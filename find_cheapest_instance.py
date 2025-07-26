@@ -17,11 +17,11 @@ import os
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Configuration
-MIN_VCPU = 16
-MAX_VCPU = 32
-MIN_RAM_GB = 64
-MAX_RAM_GB = 256
+# Default configuration (can be overridden)
+DEFAULT_MIN_VCPU = 16
+DEFAULT_MAX_VCPU = 32
+DEFAULT_MIN_RAM_GB = 64
+DEFAULT_MAX_RAM_GB = 256
 
 # Instance type specifications (vCPU, RAM in GB)
 AWS_INSTANCE_SPECS = {
@@ -255,7 +255,36 @@ def get_azure_spot_prices() -> List[Dict[str, Any]]:
     return instances
 
 
-def interactive_selection(sorted_instances: List[Dict[str, Any]]) -> int:
+def load_hardware_config(config_file: str) -> Dict[str, int]:
+    """Load hardware requirements from config file."""
+    config = {
+        'min_vcpu': DEFAULT_MIN_VCPU,
+        'max_vcpu': DEFAULT_MAX_VCPU,
+        'min_ram_gb': DEFAULT_MIN_RAM_GB,
+        'max_ram_gb': DEFAULT_MAX_RAM_GB
+    }
+    
+    if os.path.exists(config_file):
+        try:
+            with open(config_file, 'r') as f:
+                file_config = json.load(f)
+            
+            # Check for hardware requirements in config
+            if 'hardware' in file_config:
+                hw_config = file_config['hardware']
+                config.update({
+                    'min_vcpu': hw_config.get('min_vcpu', config['min_vcpu']),
+                    'max_vcpu': hw_config.get('max_vcpu', config['max_vcpu']),
+                    'min_ram_gb': hw_config.get('min_ram_gb', config['min_ram_gb']),
+                    'max_ram_gb': hw_config.get('max_ram_gb', config['max_ram_gb'])
+                })
+        except Exception as e:
+            logger.warning(f"Could not load config file {config_file}: {e}")
+    
+    return config
+
+
+def interactive_selection(sorted_instances: List[Dict[str, Any]], max_ram_gb: int) -> int:
     """Interactive selection menu for choosing instances."""
     if not sorted_instances:
         return -1
@@ -286,7 +315,7 @@ def interactive_selection(sorted_instances: List[Dict[str, Any]]) -> int:
                 break
     
     # If no higher memory option found, or if cheapest already has max memory
-    if not higher_memory_option or cheapest_per_core['ram_gb'] >= MAX_RAM_GB:
+    if not higher_memory_option or cheapest_per_core['ram_gb'] >= max_ram_gb:
         higher_memory_option = None
     
     # Display options
@@ -382,7 +411,40 @@ def main():
     parser = argparse.ArgumentParser(description="Find cheapest spot instances across cloud providers")
     parser.add_argument("--no-interactive", action="store_true", 
                        help="Skip interactive selection menu")
+    parser.add_argument("--config", default="config.json",
+                       help="Configuration file (default: config.json)")
+    
+    # Hardware requirement arguments
+    parser.add_argument("--min-vcpu", type=int,
+                       help=f"Minimum vCPUs (default: {DEFAULT_MIN_VCPU})")
+    parser.add_argument("--max-vcpu", type=int,
+                       help=f"Maximum vCPUs (default: {DEFAULT_MAX_VCPU})")
+    parser.add_argument("--min-ram", type=int,
+                       help=f"Minimum RAM in GB (default: {DEFAULT_MIN_RAM_GB})")
+    parser.add_argument("--max-ram", type=int,
+                       help=f"Maximum RAM in GB (default: {DEFAULT_MAX_RAM_GB})")
+    
     args = parser.parse_args()
+    
+    # Load hardware configuration
+    hw_config = load_hardware_config(args.config)
+    
+    # Override with command line arguments if provided
+    min_vcpu = args.min_vcpu if args.min_vcpu is not None else hw_config['min_vcpu']
+    max_vcpu = args.max_vcpu if args.max_vcpu is not None else hw_config['max_vcpu']
+    min_ram_gb = args.min_ram if args.min_ram is not None else hw_config['min_ram_gb']
+    max_ram_gb = args.max_ram if args.max_ram is not None else hw_config['max_ram_gb']
+    
+    # Validate ranges
+    if min_vcpu > max_vcpu:
+        logger.error("Minimum vCPUs cannot be greater than maximum vCPUs")
+        sys.exit(1)
+    
+    if min_ram_gb > max_ram_gb:
+        logger.error("Minimum RAM cannot be greater than maximum RAM")
+        sys.exit(1)
+    
+    logger.info(f"Hardware requirements: {min_vcpu}-{max_vcpu} vCPUs, {min_ram_gb}-{max_ram_gb}GB RAM")
     
     all_instances = []
     
@@ -406,7 +468,7 @@ def main():
     # Filter based on hardware requirements
     filtered = [
         inst for inst in all_instances
-        if MIN_VCPU <= inst['vcpu'] <= MAX_VCPU and MIN_RAM_GB <= inst['ram_gb'] <= MAX_RAM_GB
+        if min_vcpu <= inst['vcpu'] <= max_vcpu and min_ram_gb <= inst['ram_gb'] <= max_ram_gb
     ]
     
     logger.info(f"Found {len(filtered)} instances meeting hardware requirements")
@@ -438,7 +500,7 @@ def main():
             print("\nTop 20 results saved to spot_prices.json")
         else:
             # Interactive selection
-            selected_index = interactive_selection(sorted_instances)
+            selected_index = interactive_selection(sorted_instances, max_ram_gb)
             
             if selected_index >= 0:
                 selected = sorted_instances[selected_index]

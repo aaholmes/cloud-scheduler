@@ -243,13 +243,27 @@ Create `config.json` with your settings:
 ## Usage
 
 ### 1. Find cheapest instances:
+
+**Basic usage:**
 ```bash
 python find_cheapest_instance.py
 ```
 
+**With custom hardware requirements:**
+```bash
+# Command-line arguments
+python find_cheapest_instance.py --min-vcpu 8 --max-vcpu 16 --min-ram 32 --max-ram 128
+
+# Using configuration profiles
+python find_cheapest_instance.py --config config_profiles/small_calculation.json
+
+# Non-interactive mode
+python find_cheapest_instance.py --no-interactive --min-vcpu 32 --max-vcpu 64
+```
+
 This will:
 - Query spot prices across all providers
-- Filter by hardware requirements (16-32 vCPUs, 64-256GB RAM)
+- Filter by your specified hardware requirements
 - Display top 20 instances with hourly and per-core pricing
 - Present interactive selection menu:
   - Option 1: Cheapest per-core instance
@@ -257,11 +271,6 @@ This will:
   - Option 3: Higher memory alternative (if available and cost-effective)
   - Option 4: Abort
 - Save your selection as index 0 in `spot_prices.json`
-
-For automated workflows:
-```bash
-python find_cheapest_instance.py --no-interactive
-```
 
 ### 2. Submit a job with S3 staging (Recommended):
 
@@ -271,6 +280,20 @@ The `cloud_run.py` script handles the complete workflow:
 # Submit job using cheapest instance
 python cloud_run.py /path/to/job/files \
   --s3-bucket my-shci-jobs \
+  --from-spot-prices
+
+# Submit with custom hardware requirements
+python cloud_run.py /path/to/job/files \
+  --s3-bucket my-shci-jobs \
+  --from-spot-prices \
+  --min-vcpu 32 \
+  --max-vcpu 64 \
+  --min-ram 256
+
+# Use configuration profile
+python cloud_run.py /path/to/job/files \
+  --s3-bucket my-shci-jobs \
+  --config config_profiles/large_calculation.json \
   --from-spot-prices
 
 # Submit with specific instance
